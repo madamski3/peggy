@@ -15,6 +15,12 @@ from app.services.todos import create_todo_with_task
 
 
 async def handle_set_reminder(db: AsyncSession, **kwargs: Any) -> dict:
+    """Create a todo + task + scheduled push notification in one atomic call.
+
+    This is the "remind me" workflow: the todo tracks what needs doing,
+    the task anchors it to a time, and the notification triggers delivery
+    via ntfy when the time arrives (picked up by APScheduler's poll loop).
+    """
     remind_at = kwargs["remind_at"]
     title = kwargs["title"]
     description = kwargs.get("description")

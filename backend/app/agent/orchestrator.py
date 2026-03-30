@@ -55,6 +55,7 @@ async def run_agent_loop(
     session_id: uuid.UUID | None,
     db: AsyncSession,
     confirmation_id: uuid.UUID | None = None,
+    channel: str = "chat",
 ) -> ChatResponse:
     """Run the full agent loop: context → LLM → tools → response.
 
@@ -64,6 +65,8 @@ async def run_agent_loop(
         db: Async database session.
         confirmation_id: If provided, executes the cached HIGH_STAKES tool call
             directly without re-running the LLM.
+        channel: Interaction channel — "chat" for user-initiated, "proactive"
+            for scheduler-triggered invocations.
 
     Returns:
         A ChatResponse with spoken_summary, structured_payload, actions, etc.
@@ -140,7 +143,7 @@ async def run_agent_loop(
                         )
                         # Log the confirmation interaction before returning
                         await _log_and_commit(
-                            db, session_id, user_message, chat_response, actions_taken,
+                            db, session_id, user_message, chat_response, actions_taken, channel,
                         )
                         return chat_response
 
@@ -189,7 +192,7 @@ async def run_agent_loop(
     chat_response = _build_response(final_text, actions_taken, session_id)
 
     # ── Step E+F: Log and commit ──
-    await _log_and_commit(db, session_id, user_message, chat_response, actions_taken)
+    await _log_and_commit(db, session_id, user_message, chat_response, actions_taken, channel)
     return chat_response
 
 
@@ -269,6 +272,7 @@ async def _log_and_commit(
     user_message: str,
     chat_response: ChatResponse,
     actions_taken: list[ActionTaken],
+    channel: str = "chat",
 ) -> None:
     """Log the interaction and commit the transaction."""
     lower_msg = user_message.lower()
@@ -281,7 +285,7 @@ async def _log_and_commit(
         await log_interaction(
             db,
             session_id=session_id,
-            channel="chat",
+            channel=channel,
             user_message=user_message,
             parsed_intent=detected_intents,
             assistant_response=chat_response.model_dump(mode="json"),

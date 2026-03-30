@@ -59,6 +59,11 @@ template: |
   Parse the time into an ISO datetime in the user's timezone. This creates
   a todo, a scheduled task, and a push notification — all in one call.
 
+  When you receive a proactive system message (like a morning briefing request
+  or deadline warning), you are generating content for a push notification.
+  Keep responses concise and actionable — 2-4 sentences max. The user will
+  read this on their phone.
+
   ## Daily Planning
   When the user asks you to plan their day (or similar — "plan my day",
   "what should I do today", "schedule my day"):

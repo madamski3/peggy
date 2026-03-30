@@ -62,6 +62,7 @@ PROFILE_FIELD_MAPPINGS: dict[str, dict] = {
     "waking_hours": {"category": "schedule", "key": "waking_hours", "type": "single"},
     "preferred_work_hours": {"category": "schedule", "key": "preferred_work_hours", "type": "single"},
     "preferred_errand_time": {"category": "schedule", "key": "preferred_errand_time", "type": "single"},
+    "morning_briefing_time": {"category": "schedule", "key": "morning_briefing_time", "type": "single"},
 }
 
 PEOPLE_FIELD_MAPPINGS: dict[str, dict] = {

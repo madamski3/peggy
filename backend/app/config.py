@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     ntfy_topic: str = "assistant"
     notification_poll_seconds: int = 30
 
+    # Proactive job schedules
+    morning_briefing_enabled: bool = True
+    morning_briefing_default_hour: int = 7
+    morning_briefing_default_minute: int = 0
+    deadline_warning_enabled: bool = True
+    deadline_warning_hour: int = 10
+    deadline_warning_days_ahead: int = 3
+    key_date_alert_enabled: bool = True
+    key_date_alert_hour: int = 9
+    key_date_alert_days_ahead: int = 7
+
     model_config = {"env_file": ".env"}
 
 

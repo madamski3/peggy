@@ -4,14 +4,18 @@ Creates the app, configures CORS (allow all origins for Tailscale access),
 and registers all routers under the /api prefix. Uvicorn runs this as
 app.main:app.
 
-Also starts APScheduler on startup to poll for due notifications and
-deliver them via ntfy.
+Also starts APScheduler on startup with:
+  - Notification poller (every 30s) for reminder delivery
+  - Morning briefing (daily cron)
+  - Deadline warning scanner (daily cron)
+  - Key date alerts (daily cron)
 """
 
 import logging
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,6 +23,11 @@ from app.config import settings
 from app.database import async_session_maker
 from app.routers import auth, chat, health, people, profile, tasks, todos
 from app.services.notifications import process_due_notifications
+from app.services.scheduled_jobs import (
+    deadline_warning_scan,
+    key_date_alerts,
+    morning_briefing,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +44,35 @@ async def lifespan(app: FastAPI):
         args=[async_session_maker],
         id="notification_poller",
     )
+    if settings.morning_briefing_enabled:
+        scheduler.add_job(
+            morning_briefing,
+            CronTrigger(
+                hour=settings.morning_briefing_default_hour,
+                minute=settings.morning_briefing_default_minute,
+            ),
+            args=[async_session_maker],
+            id="morning_briefing",
+        )
+    if settings.deadline_warning_enabled:
+        scheduler.add_job(
+            deadline_warning_scan,
+            CronTrigger(hour=settings.deadline_warning_hour, minute=0),
+            args=[async_session_maker],
+            id="deadline_warning",
+        )
+    if settings.key_date_alert_enabled:
+        scheduler.add_job(
+            key_date_alerts,
+            CronTrigger(hour=settings.key_date_alert_hour, minute=0),
+            args=[async_session_maker],
+            id="key_date_alerts",
+        )
     scheduler.start()
-    logger.info("Notification scheduler started (poll every %ds)", settings.notification_poll_seconds)
+    logger.info("Scheduler started (notification poll + %d proactive jobs)",
+                sum([settings.morning_briefing_enabled,
+                     settings.deadline_warning_enabled,
+                     settings.key_date_alert_enabled]))
     yield
     # Shutdown
     scheduler.shutdown()
