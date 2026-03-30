@@ -434,6 +434,8 @@ def _summarize_result(tool_name: str, result: dict) -> str:
         return f"Deferred task: {result.get('title', 'untitled')}"
     if tool_name == "cancel_task":
         return f"Cancelled task: {result.get('title', 'untitled')}"
+    if tool_name == "set_reminder":
+        return f"Reminder set: {result.get('title', 'untitled')} at {result.get('remind_at', '?')}"
     if tool_name == "create_list":
         return f"Created list: {result.get('name', 'untitled')}"
     if tool_name == "add_list_item":

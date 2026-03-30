@@ -32,7 +32,10 @@ from app.models.tables import Credential
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+SCOPES = [
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/gmail.readonly",
+]
 SERVICE_KEY = "google_calendar"
 ASSISTANT_COLOR_ID = "9"  # Blueberry in Google Calendar
 ASSISTANT_TAG = "[via Assistant]"

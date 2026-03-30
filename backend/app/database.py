@@ -13,6 +13,9 @@ from app.config import settings
 engine = create_async_engine(settings.database_url)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+# Alias for use by background jobs (APScheduler) that create their own sessions
+async_session_maker = async_session
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:

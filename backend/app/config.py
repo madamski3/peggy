@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://peggy.michaeladamski.com:3002/api/auth/google/callback"
     google_calendar_id: str = "primary"
 
+    # ntfy push notifications
+    ntfy_base_url: str = "http://ntfy:80"
+    ntfy_topic: str = "assistant"
+    notification_poll_seconds: int = 30
+
     model_config = {"env_file": ".env"}
 
 

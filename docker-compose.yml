@@ -20,6 +20,20 @@ services:
     networks:
       - server-network
 
+  ntfy:
+    image: binwiederhier/ntfy
+    restart: unless-stopped
+    command: serve
+    environment:
+      NTFY_BASE_URL: "http://100.94.165.38:8090"
+      NTFY_UPSTREAM_BASE_URL: "https://ntfy.sh"
+    ports:
+      - '${TAILSCALE_IP}:8090:80'
+    volumes:
+      - ./ntfy-data:/var/lib/ntfy
+    networks:
+      - server-network
+
 networks:
   server-network:
     external: true

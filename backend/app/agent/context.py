@@ -60,6 +60,10 @@ INTENT_SIGNALS: dict[str, list[str]] = {
         "my name", "about me", "i like", "i prefer", "remember that i",
         "my profile", "my preferences",
     ],
+    "email": [
+        "email", "emails", "gmail", "inbox", "message from",
+        "mail", "unread", "shipping", "confirmation email",
+    ],
 }
 
 
@@ -188,6 +192,20 @@ async def assemble_context(
             for lst in lists:
                 lines.append(f"- {lst.get('name', '?')} ({lst.get('type', 'custom')}, {lst.get('pending_count', 0)} pending items)")
             context["active_lists"] = "\n".join(lines)
+
+    # ── Conditional: email ──
+    if "email" in intents or "planning" in intents:
+        try:
+            from app.services.gmail import list_emails
+            emails = await list_emails(db, max_results=5)
+            if isinstance(emails, list) and emails:
+                lines = []
+                for e in emails:
+                    unread = "\u25cf" if e.get("is_unread") else " "
+                    lines.append(f"- [{unread}] {e.get('from_short', '?')}: {e.get('subject', 'No subject')}")
+                context["recent_emails"] = "\n".join(lines)
+        except Exception:
+            pass  # Gmail not connected or API error — skip silently
 
     return context
 

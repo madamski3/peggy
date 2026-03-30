@@ -114,8 +114,8 @@ async def google_auth_callback(
     <body style="font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f9fafb;">
         <div style="text-align: center;">
             <div style="font-size: 3rem; margin-bottom: 0.5rem;">&#9989;</div>
-            <h2 style="color: #16a34a; margin: 0 0 0.5rem;">Google Calendar connected!</h2>
-            <p style="color: #6b7280;">You can close this tab and return to the assistant.</p>
+            <h2 style="color: #16a34a; margin: 0 0 0.5rem;">Google connected!</h2>
+            <p style="color: #6b7280;">Calendar and Gmail are ready. You can close this tab.</p>
         </div>
     </body>
     </html>

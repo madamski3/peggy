@@ -9,9 +9,11 @@ are available before the first LLM call.
 from app.agent.tools import (  # noqa: F401
     calendar_tools,
     conversation_tools,
+    gmail_tools,
     list_tools,
     planning_tools,
     profile_tools,
+    reminder_tools,
     task_tools,
     todo_tools,
 )
