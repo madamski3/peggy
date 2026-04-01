@@ -150,7 +150,11 @@ async def get_todo_detail(db: AsyncSession, todo_id: str | uuid.UUID) -> dict | 
 
 
 async def create_todo_with_task(db: AsyncSession, **kwargs: Any) -> dict:
-    """Shortcut: create a todo + single task atomically. Todo goes to 'active' status."""
+    """Shortcut: create a todo + single task atomically. Todo goes to 'active' status.
+
+    Also creates a Google Calendar event if the task has scheduled start/end times,
+    so the user sees it on their calendar alongside other events.
+    """
     todo = Todo(
         title=kwargs["title"],
         description=kwargs.get("description"),
@@ -176,6 +180,25 @@ async def create_todo_with_task(db: AsyncSession, **kwargs: Any) -> dict:
 
     todo_dict = model_to_dict(todo)
     todo_dict["task"] = model_to_dict(task)
+
+    # Create a calendar event if the task has scheduled times
+    start = kwargs.get("scheduled_start")
+    end = kwargs.get("scheduled_end")
+    if start and end and start != end:
+        try:
+            from app.services.google_calendar import create_event
+            event_result = await create_event(
+                db,
+                summary=kwargs["title"],
+                start=start,
+                end=end,
+                description=kwargs.get("description", ""),
+            )
+            if "error" not in event_result:
+                todo_dict["calendar_event"] = event_result
+        except Exception:
+            pass  # Calendar not connected or API error — skip silently
+
     return todo_dict
 
 
