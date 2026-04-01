@@ -254,6 +254,39 @@ class Interaction(Base):
         DateTime(timezone=True), server_default=text("now()")
     )
 
+    # Relationships
+    llm_calls: Mapped[list["LlmCall"]] = relationship(back_populates="interaction")
+
+
+class LlmCall(Base):
+    __tablename__ = "llm_calls"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    interaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("interactions.id")
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    round_number: Mapped[int] = mapped_column(Integer)
+    model: Mapped[str] = mapped_column(Text)
+    stop_reason: Mapped[str | None] = mapped_column(Text)
+    input_tokens: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    output_tokens: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    thinking_tokens: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    cache_creation_tokens: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    estimated_cost_usd: Mapped[float] = mapped_column(
+        Numeric(precision=10, scale=6), server_default=text("0")
+    )
+    raw_response: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+
+    # Relationships
+    interaction: Mapped["Interaction | None"] = relationship(back_populates="llm_calls")
+
 
 class FinancialAccount(Base):
     __tablename__ = "financial_accounts"

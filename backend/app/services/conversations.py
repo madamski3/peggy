@@ -14,11 +14,16 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import or_, select
+import anthropic
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.tables import Interaction
+from app.models.tables import Interaction, LlmCall
 from app.services.serialization import model_to_dict
+
+# Sonnet 4.6 pricing (per million tokens)
+_COST_PER_M_INPUT = 3.0
+_COST_PER_M_OUTPUT = 15.0  # also covers thinking tokens
 
 
 async def search_conversations(
@@ -95,3 +100,61 @@ async def log_interaction(
     db.add(interaction)
     await db.flush()
     return interaction
+
+
+async def log_llm_call(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    round_number: int,
+    response: anthropic.types.Message,
+) -> LlmCall:
+    """Persist metadata from a single LLM API call."""
+    usage = response.usage
+    input_tokens = usage.input_tokens
+    output_tokens = usage.output_tokens
+    thinking_tokens = getattr(usage, "thinking_tokens", 0) or 0
+    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+
+    cost = (
+        input_tokens * _COST_PER_M_INPUT
+        + (output_tokens + thinking_tokens) * _COST_PER_M_OUTPUT
+    ) / 1_000_000
+
+    # Serialize the full API response for auditability.
+    # Content blocks (thinking text, tool inputs) can be large, so we strip
+    # thinking block text but keep everything else (citations, etc.).
+    raw = response.model_dump(mode="json")
+    for block in raw.get("content", []):
+        if block.get("type") == "thinking":
+            block["thinking"] = "[redacted]"
+
+    llm_call = LlmCall(
+        session_id=session_id,
+        round_number=round_number,
+        model=response.model,
+        stop_reason=response.stop_reason,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        thinking_tokens=thinking_tokens,
+        cache_read_tokens=cache_read,
+        cache_creation_tokens=cache_creation,
+        estimated_cost_usd=round(cost, 6),
+        raw_response=raw,
+    )
+    db.add(llm_call)
+    await db.flush()
+    return llm_call
+
+
+async def backfill_llm_call_interaction_id(
+    db: AsyncSession,
+    session_id: uuid.UUID,
+    interaction_id: uuid.UUID,
+) -> None:
+    """Link orphaned llm_calls rows to their interaction after it's created."""
+    await db.execute(
+        update(LlmCall)
+        .where(LlmCall.session_id == session_id, LlmCall.interaction_id.is_(None))
+        .values(interaction_id=interaction_id)
+    )
