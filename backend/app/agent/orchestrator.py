@@ -28,12 +28,12 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.client import call_llm
-from app.agent.context import INTENT_SIGNALS, assemble_context, build_conversation_messages
+from app.agent.context import assemble_context, build_conversation_messages, detect_intents
 from app.agent.tools.registry import (
     ActionTier,
     TOOL_REGISTRY,
     classify_action,
-    get_all_tool_schemas,
+    get_tool_schemas_for_intents,
 )
 from app.config import settings
 from app.prompts.loader import render_prompt
@@ -86,6 +86,7 @@ async def run_agent_loop(
 
     # ── Step A: Context Assembly ──
     context = await assemble_context(db, user_message, session_id)
+    intents = context.get("intents", set())
     system_prompt = render_prompt(settings.system_prompt_version, context)
 
     # ── Step B: Build messages ──
@@ -103,7 +104,7 @@ async def run_agent_loop(
     # the tool and append the result to messages -> repeat. If Claude returns
     # end_turn (i.e. it's done calling tools), extract the final text and break.
     actions_taken: list[ActionTaken] = []
-    tool_schemas = get_all_tool_schemas()
+    tool_schemas = get_tool_schemas_for_intents(intents)
     final_text = ""
 
     for round_num in range(settings.agent_max_tool_rounds):
@@ -287,11 +288,7 @@ async def _log_and_commit(
     channel: str = "chat",
 ) -> None:
     """Log the interaction and commit the transaction."""
-    lower_msg = user_message.lower()
-    detected_intents = ",".join(sorted(
-        s for s, keywords in INTENT_SIGNALS.items()
-        if any(kw in lower_msg for kw in keywords)
-    )) or None
+    detected_intents = ",".join(sorted(detect_intents(user_message))) or None
 
     try:
         interaction = await log_interaction(
