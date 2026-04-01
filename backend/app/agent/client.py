@@ -29,7 +29,8 @@ async def call_llm(
     messages: list[dict],
     system: str,
     tools: list[dict],
-    max_tokens: int = 4096,
+    max_tokens: int = 16000,
+    effort: str | None = "medium",
 ) -> anthropic.types.Message:
     """Call the Anthropic Messages API with tool definitions.
 
@@ -38,15 +39,23 @@ async def call_llm(
         system: System prompt text
         tools: Tool definitions in Anthropic format
         max_tokens: Maximum tokens in the response
+        effort: Thinking effort level ("low", "medium", "high") or None to disable
 
     Returns:
         The Anthropic Message response object
     """
     client = get_client()
-    return await client.messages.create(
+
+    kwargs: dict = dict(
         model=settings.anthropic_model,
         max_tokens=max_tokens,
         system=system,
         messages=messages,
         tools=tools,
     )
+
+    if effort is not None:
+        kwargs["thinking"] = {"type": "adaptive"}
+        kwargs["output_config"] = {"effort": effort}
+
+    return await client.messages.create(**kwargs)

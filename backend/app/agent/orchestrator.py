@@ -42,7 +42,12 @@ from app.schemas.agent import (
     ChatResponse,
     ConfirmationRequired,
 )
-from app.services.conversations import get_session_history, log_interaction
+from app.services.conversations import (
+    backfill_llm_call_interaction_id,
+    get_session_history,
+    log_interaction,
+    log_llm_call,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +114,13 @@ async def run_agent_loop(
             system=system_prompt,
             tools=tool_schemas,
         )
+
+        await log_llm_call(db, session_id, round_num + 1, response)
+
+        # Check if Claude refused the request
+        if response.stop_reason == "refusal":
+            final_text = _extract_text(response.content) or "I'm not able to help with that request."
+            break
 
         # Check if Claude is done (final text response)
         if response.stop_reason == "end_turn":
@@ -282,7 +294,7 @@ async def _log_and_commit(
     )) or None
 
     try:
-        await log_interaction(
+        interaction = await log_interaction(
             db,
             session_id=session_id,
             channel=channel,
@@ -291,6 +303,7 @@ async def _log_and_commit(
             assistant_response=chat_response.model_dump(mode="json"),
             actions_taken=[a.model_dump() for a in actions_taken],
         )
+        await backfill_llm_call_interaction_id(db, session_id, interaction.id)
     except Exception as e:
         logger.error(f"Failed to log interaction: {e}")
 
@@ -301,10 +314,10 @@ async def _log_and_commit(
 
 
 def _extract_text(content: list) -> str:
-    """Extract text from Anthropic content blocks."""
+    """Extract text from Anthropic content blocks, skipping thinking blocks."""
     parts = []
     for block in content:
-        if hasattr(block, "text"):
+        if block.type == "text":
             parts.append(block.text)
     return "\n".join(parts)
 
@@ -313,7 +326,13 @@ def _serialize_content(content: list) -> list[dict]:
     """Serialize Anthropic content blocks for the messages list."""
     serialized = []
     for block in content:
-        if block.type == "text":
+        if block.type == "thinking":
+            serialized.append({
+                "type": "thinking",
+                "thinking": block.thinking,
+                "signature": block.signature,
+            })
+        elif block.type == "text":
             serialized.append({"type": "text", "text": block.text})
         elif block.type == "tool_use":
             serialized.append({

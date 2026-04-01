@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # Anthropic API
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-20250514"
+    anthropic_model: str = "claude-sonnet-4-6"
     agent_max_tool_rounds: int = 10
 
     # Google Calendar OAuth
