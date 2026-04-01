@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, type KeyboardEvent } from "react";
+import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from "react";
 
 interface Props {
   onSend: (text: string) => void;
@@ -9,6 +9,13 @@ interface Props {
 export default function InputBar({ onSend, onNewChat, disabled }: Props) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus on mount and when loading completes
+  useEffect(() => {
+    if (!disabled) {
+      textareaRef.current?.focus();
+    }
+  }, [disabled]);
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim();

@@ -22,6 +22,16 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+      {/* Session header */}
+      {messages.length > 0 && (
+        <div className="border-b border-gray-100 bg-white/80 backdrop-blur-sm px-4 py-1.5">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <span className="text-xs text-gray-400">
+              {messages.length} message{messages.length !== 1 ? "s" : ""} in this conversation
+            </span>
+          </div>
+        </div>
+      )}
       <MessageList
         messages={messages}
         isLoading={isLoading}

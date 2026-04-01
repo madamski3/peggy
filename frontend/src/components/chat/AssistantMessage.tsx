@@ -2,6 +2,7 @@
  * AssistantMessage -- renders a single agent response.
  *
  * Shows the spoken_summary text, plus:
+ *   - Structured payload card (daily plan timeline, etc.)
  *   - Collapsible action list (if the agent called tools)
  *   - Confirmation card (if a HIGH_STAKES tool needs approval)
  *   - Follow-up suggestion chips (only on the most recent message)
@@ -10,6 +11,7 @@ import { useState } from "react";
 import type { ChatMessage } from "../../types/chat";
 import ConfirmationCard from "./ConfirmationCard";
 import FollowUpChips from "./FollowUpChips";
+import PayloadRenderer from "../payloads/PayloadRenderer";
 
 interface Props {
   message: ChatMessage;
@@ -34,15 +36,20 @@ export default function AssistantMessage({
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[85%]">
+      <div className="max-w-[85%] space-y-2">
         {/* Main spoken summary */}
-        <div className="rounded-2xl rounded-bl-md bg-white border border-gray-200 px-4 py-3 text-sm text-gray-800 whitespace-pre-wrap shadow-sm">
+        <div className="rounded-2xl rounded-bl-md bg-white border-l-[3px] border-l-indigo-400 border border-gray-200 px-4 py-3 text-sm text-gray-800 whitespace-pre-wrap shadow-sm">
           {message.content}
         </div>
 
+        {/* Structured payload (daily plan timeline, etc.) */}
+        {response?.structured_payload && (
+          <PayloadRenderer payload={response.structured_payload as Record<string, unknown>} />
+        )}
+
         {/* Actions taken (collapsible) */}
         {actions.length > 0 && (
-          <div className="mt-2">
+          <div>
             <button
               type="button"
               onClick={() => setShowActions(!showActions)}
