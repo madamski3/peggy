@@ -87,6 +87,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_lists,
+    category="list",
 ))
 
 register_tool(ToolDefinition(
@@ -107,6 +108,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_list_items,
+    category="list",
 ))
 
 register_tool(ToolDefinition(
@@ -123,6 +125,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_create_list,
+    category="list",
 ))
 
 register_tool(ToolDefinition(
@@ -139,6 +142,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_add_list_item,
+    category="list",
 ))
 
 register_tool(ToolDefinition(
@@ -153,6 +157,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_complete_list_item,
+    category="list",
 ))
 
 register_tool(ToolDefinition(
@@ -172,4 +177,5 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_bulk_complete_list_items,
+    category="list",
 ))

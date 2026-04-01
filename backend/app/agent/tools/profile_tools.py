@@ -139,6 +139,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_profile_facts,
+    category="profile",
 ))
 
 register_tool(ToolDefinition(
@@ -158,6 +159,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_add_profile_fact,
+    category="profile",
 ))
 
 register_tool(ToolDefinition(
@@ -174,6 +176,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_update_profile_fact,
+    category="profile",
 ))
 
 register_tool(ToolDefinition(
@@ -193,4 +196,5 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_people,
+    category="profile",
 ))

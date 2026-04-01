@@ -74,4 +74,5 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.HIGH_STAKES,
     handler=handle_execute_daily_plan,
+    category="planning",
 ))

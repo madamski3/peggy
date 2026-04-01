@@ -99,6 +99,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_calendar_events,
+    category="calendar",
 ))
 
 
@@ -141,6 +142,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_create_calendar_event,
+    category="calendar",
 ))
 
 
@@ -182,6 +184,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_update_calendar_event,
+    category="calendar",
 ))
 
 
@@ -203,6 +206,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.HIGH_STAKES,
     handler=handle_delete_calendar_event,
+    category="calendar",
 ))
 
 
@@ -232,4 +236,5 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_find_free_time,
+    category="calendar",
 ))

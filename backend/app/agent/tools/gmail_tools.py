@@ -64,6 +64,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_recent_emails,
+    category="email",
 ))
 
 
@@ -86,6 +87,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_email_detail,
+    category="email",
 ))
 
 
@@ -112,4 +114,5 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_search_emails,
+    category="email",
 ))

@@ -110,6 +110,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_tasks,
+    category="task",
 ))
 
 register_tool(ToolDefinition(
@@ -130,6 +131,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_create_task,
+    category="task",
 ))
 
 register_tool(ToolDefinition(
@@ -159,6 +161,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.HIGH_STAKES,
     handler=handle_create_tasks_batch,
+    category="task",
 ))
 
 register_tool(ToolDefinition(
@@ -186,6 +189,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_update_task,
+    category="task",
 ))
 
 register_tool(ToolDefinition(
@@ -202,6 +206,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_complete_task,
+    category="task",
 ))
 
 register_tool(ToolDefinition(
@@ -218,6 +223,7 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_defer_task,
+    category="task",
 ))
 
 register_tool(ToolDefinition(
@@ -232,4 +238,5 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_cancel_task,
+    category="task",
 ))
