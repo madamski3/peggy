@@ -31,16 +31,19 @@ INTENT_SIGNALS: dict[str, list[str]] = {
     "planning": [
         "plan my day", "plan tomorrow", "schedule", "what should i do",
         "what's on", "today's plan", "what do i have", "my day",
-        "what's happening", "free time",
+        "what's happening", "free time", "what's going on",
+        "my agenda", "daily plan", "priorities", "what's ahead",
     ],
     "calendar": [
         "calendar", "meeting", "appointment", "event", "busy",
         "block time", "when am i free", "what's on my calendar",
+        "when is", "book", "reschedule", "block",
     ],
     "todo": [
         "todo", "task", "i need to", "remind me", "don't forget",
         "add to my", "pick up", "backlog", "to-do", "to do list",
-        "i have to", "i should", "i gotta",
+        "i have to", "i should", "i gotta", "need to",
+        "get done", "finish", "handle", "take care of",
     ],
     "list": [
         "grocery", "groceries", "shopping list", "packing list",
@@ -52,7 +55,11 @@ INTENT_SIGNALS: dict[str, list[str]] = {
     ],
     "profile": [
         "my name", "about me", "i like", "i prefer", "remember that i",
-        "my profile", "my preferences",
+        "my profile", "my preferences", "remember", "i am",
+        "my wife", "my husband", "my partner",
+        "family", "who is", "who are", "sister", "brother",
+        "dad", "mom", "father", "mother", "friend", "colleague",
+        "people", "contacts",
     ],
     "email": [
         "email", "emails", "gmail", "inbox", "message from",
@@ -118,24 +125,29 @@ def build_conversation_messages(
 ) -> list[dict]:
     """Build the Anthropic messages list with conversation history.
 
-    Prepends previous turns from the session, then appends the new user message.
+    Replays the full message_chain (including tool calls and results) from
+    prior turns when available. Falls back to spoken_summary for older
+    interactions that predate the message_chain column.
     """
     messages: list[dict] = []
 
     if conversation_history:
         for turn in conversation_history:
-            user_msg = turn.get("user_message")
-            assistant_resp = turn.get("assistant_response")
-            if user_msg:
-                messages.append({"role": "user", "content": user_msg})
-            if assistant_resp:
-                summary = assistant_resp.get("spoken_summary", str(assistant_resp)) if isinstance(assistant_resp, dict) else str(assistant_resp)
-                # Include structured_payload when present (e.g. daily plan
-                # with todo IDs) so the LLM can reference it in follow-up turns
-                payload = assistant_resp.get("structured_payload") if isinstance(assistant_resp, dict) else None
-                if payload:
-                    summary += f"\n\n[structured_payload: {json.dumps(payload)}]"
-                messages.append({"role": "assistant", "content": summary})
+            chain = turn.get("message_chain")
+            if chain:
+                # Replay the full chain — user message, tool calls, tool
+                # results, and final assistant response exactly as they
+                # were sent to / received from the Anthropic API.
+                messages.extend(chain)
+            else:
+                # Legacy fallback for interactions without message_chain
+                user_msg = turn.get("user_message")
+                assistant_resp = turn.get("assistant_response")
+                if user_msg:
+                    messages.append({"role": "user", "content": user_msg})
+                if assistant_resp:
+                    summary = assistant_resp.get("spoken_summary", str(assistant_resp)) if isinstance(assistant_resp, dict) else str(assistant_resp)
+                    messages.append({"role": "assistant", "content": summary})
 
     messages.append({"role": "user", "content": user_message})
     return messages

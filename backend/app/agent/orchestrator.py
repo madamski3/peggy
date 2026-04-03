@@ -93,11 +93,12 @@ async def run_agent_loop(
     # Load session history for conversation continuity
     conversation_history = None
     if session_id:
-        history = await get_session_history(db, session_id, limit=5)
+        history = await get_session_history(db, session_id, limit=3)
         if history:
             conversation_history = history
 
     messages = build_conversation_messages(user_message, conversation_history)
+    turn_start = len(messages)  # index where this turn's messages begin
 
     # ── Step C: Tool-use loop ──
     # Each round: send messages to Claude -> if Claude returns tool_use, execute
@@ -198,6 +199,13 @@ async def run_agent_loop(
         logger.warning(f"Agent loop hit max rounds ({settings.agent_max_tool_rounds})")
         final_text = _extract_text(response.content) if response else ""
 
+    # Append the final assistant response so the chain is complete
+    if response and response.content:
+        messages.append({"role": "assistant", "content": _serialize_content(response.content)})
+
+    # Extract this turn's messages (excluding replayed history)
+    turn_messages = messages[turn_start:]
+
     # ── Step D: Response Builder ──
     # Claude is instructed to output a JSON object with spoken_summary,
     # structured_payload, and follow_up_suggestions. _build_response tries to
@@ -205,7 +213,10 @@ async def run_agent_loop(
     chat_response = _build_response(final_text, actions_taken, session_id)
 
     # ── Step E+F: Log and commit ──
-    await _log_and_commit(db, session_id, user_message, chat_response, actions_taken, channel)
+    await _log_and_commit(
+        db, session_id, user_message, chat_response, actions_taken, channel,
+        message_chain=turn_messages,
+    )
     return chat_response
 
 
@@ -286,6 +297,7 @@ async def _log_and_commit(
     chat_response: ChatResponse,
     actions_taken: list[ActionTaken],
     channel: str = "chat",
+    message_chain: list[dict[str, Any]] | None = None,
 ) -> None:
     """Log the interaction and commit the transaction."""
     detected_intents = ",".join(sorted(detect_intents(user_message))) or None
@@ -299,6 +311,7 @@ async def _log_and_commit(
             parsed_intent=detected_intents,
             assistant_response=chat_response.model_dump(mode="json"),
             actions_taken=[a.model_dump() for a in actions_taken],
+            message_chain=message_chain,
         )
         await backfill_llm_call_interaction_id(db, session_id, interaction.id)
     except Exception as e:

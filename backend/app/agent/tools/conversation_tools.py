@@ -38,16 +38,16 @@ async def handle_get_recent_conversations(db: AsyncSession, **kwargs: Any) -> di
 
 register_tool(ToolDefinition(
     name="search_conversations",
-    description="Search past conversation history by text content. Use when the user references something they said before.",
+    description="Search past conversations by text content.",
     input_schema={
         "type": "object",
         "properties": {
-            "query": {"type": "string", "description": "Search text to find in past messages."},
+            "query": {"type": "string"},
             "date_range": {
                 "type": "object",
                 "properties": {
-                    "start": {"type": "string", "description": "ISO datetime start."},
-                    "end": {"type": "string", "description": "ISO datetime end."},
+                    "start": {"type": "string"},
+                    "end": {"type": "string"},
                 },
             },
         },
@@ -55,17 +55,19 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_search_conversations,
+    category="conversation",
 ))
 
 register_tool(ToolDefinition(
     name="get_recent_conversations",
-    description="Get the most recent conversation interactions. Use for context about what was recently discussed.",
+    description="Get the most recent conversation interactions.",
     input_schema={
         "type": "object",
         "properties": {
-            "n": {"type": "integer", "description": "Number of recent interactions to return. Default: 5."},
+            "n": {"type": "integer"},
         },
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_recent_conversations,
+    category="conversation",
 ))

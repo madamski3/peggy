@@ -65,61 +65,61 @@ async def handle_create_todo_with_task(db: AsyncSession, **kwargs: Any) -> dict:
 
 register_tool(ToolDefinition(
     name="get_todos",
-    description="Get a filtered list of todos from the backlog. Use this to see what's on the user's plate.",
+    description="Get todos from the backlog, optionally filtered.",
     input_schema={
         "type": "object",
         "properties": {
             "filters": {
                 "type": "object",
-                "description": "Optional filters to narrow results.",
                 "properties": {
-                    "status": {"type": "string", "description": "Filter by status (backlog, active, completed, cancelled)."},
-                    "priority": {"type": "string", "description": "Filter by priority (low, medium, high, urgent)."},
-                    "deadline_before": {"type": "string", "description": "ISO datetime — return todos with deadline before this date."},
-                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Filter by tags (match any)."},
-                    "has_scheduled_tasks": {"type": "boolean", "description": "If true, only return todos that have scheduled tasks. If false, only unscheduled."},
+                    "status": {"type": "string", "enum": ["backlog", "active", "completed", "cancelled"]},
+                    "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
+                    "deadline_before": {"type": "string", "description": "ISO datetime."},
+                    "tags": {"type": "array", "items": {"type": "string"}},
+                    "has_scheduled_tasks": {"type": "boolean"},
                 },
             },
         },
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_todos,
+    category="todo",
 ))
 
 register_tool(ToolDefinition(
     name="create_todo",
-    description="Create a new todo in the backlog. Use this when the user mentions something they need to do.",
+    description="Create a new todo in the backlog.",
     input_schema={
         "type": "object",
         "properties": {
-            "title": {"type": "string", "description": "Short, actionable title for the todo."},
-            "description": {"type": "string", "description": "Additional details or context."},
-            "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"], "description": "Priority level. Default: medium."},
-            "deadline": {"type": "string", "description": "ISO datetime for hard deadline, if any."},
-            "target_date": {"type": "string", "description": "ISO datetime for soft target date."},
-            "preferred_window": {"type": "string", "description": "Preferred time window (morning, afternoon, evening)."},
-            "estimated_duration_minutes": {"type": "integer", "description": "Estimated time to complete in minutes."},
-            "energy_level": {"type": "string", "enum": ["low", "medium", "high"], "description": "Energy level required."},
-            "location": {"type": "string", "description": "Where this needs to be done (home, office, errands)."},
-            "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags for categorization."},
-            "parent_todo_id": {"type": "string", "description": "UUID of parent todo, if this is a sub-todo."},
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
+            "deadline": {"type": "string", "description": "ISO datetime."},
+            "target_date": {"type": "string", "description": "ISO datetime, soft target."},
+            "preferred_window": {"type": "string", "enum": ["morning", "afternoon", "evening"]},
+            "estimated_duration_minutes": {"type": "integer"},
+            "energy_level": {"type": "string", "enum": ["low", "medium", "high"]},
+            "location": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "parent_todo_id": {"type": "string", "description": "UUID of parent todo for sub-todos."},
         },
         "required": ["title"],
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_create_todo,
+    category="todo",
 ))
 
 register_tool(ToolDefinition(
     name="update_todo",
-    description="Update fields on an existing todo (title, priority, deadline, tags, etc.).",
+    description="Update fields on an existing todo.",
     input_schema={
         "type": "object",
         "properties": {
-            "todo_id": {"type": "string", "description": "UUID of the todo to update."},
+            "todo_id": {"type": "string"},
             "fields": {
                 "type": "object",
-                "description": "Fields to update.",
                 "properties": {
                     "title": {"type": "string"},
                     "description": {"type": "string"},
@@ -140,51 +140,55 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_update_todo,
+    category="todo",
 ))
 
 register_tool(ToolDefinition(
     name="complete_todo",
-    description="Mark a todo as completed. Any remaining unfinished tasks will be cancelled.",
+    description="Mark a todo as completed; remaining tasks are cancelled.",
     input_schema={
         "type": "object",
         "properties": {
-            "todo_id": {"type": "string", "description": "UUID of the todo to complete."},
+            "todo_id": {"type": "string"},
         },
         "required": ["todo_id"],
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_complete_todo,
+    category="todo",
 ))
 
 register_tool(ToolDefinition(
     name="get_todo_detail",
-    description="Get full details of a specific todo, including all its tasks.",
+    description="Get full details of a todo including all its tasks.",
     input_schema={
         "type": "object",
         "properties": {
-            "todo_id": {"type": "string", "description": "UUID of the todo."},
+            "todo_id": {"type": "string"},
         },
         "required": ["todo_id"],
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_todo_detail,
+    category="todo",
 ))
 
 register_tool(ToolDefinition(
     name="create_todo_with_task",
-    description="Shortcut to create a todo and a single scheduled task simultaneously. Use for reminders or simple one-off items that need a specific time.",
+    description="Create a todo and a single scheduled task atomically.",
     input_schema={
         "type": "object",
         "properties": {
-            "title": {"type": "string", "description": "Title for both the todo and the task."},
-            "description": {"type": "string", "description": "Additional details."},
+            "title": {"type": "string"},
+            "description": {"type": "string"},
             "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
-            "scheduled_start": {"type": "string", "description": "ISO datetime for when to start."},
-            "scheduled_end": {"type": "string", "description": "ISO datetime for when it ends."},
+            "scheduled_start": {"type": "string", "description": "ISO datetime."},
+            "scheduled_end": {"type": "string", "description": "ISO datetime."},
             "estimated_duration_minutes": {"type": "integer"},
         },
         "required": ["title", "scheduled_start", "scheduled_end"],
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_create_todo_with_task,
+    category="todo",
 ))

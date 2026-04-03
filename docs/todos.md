@@ -1,19 +1,7 @@
-Migrate to 4.6 models
-- This will require the ability to manage new reasoning and "effort" params
-- Update the existing call_llm function to optionally receive these new parameters. Default to medium effort if not specified
-
-Need to log FULL response payload from LLM
-- Tokens used, cost, stop reason, model name, and anything else that the API provides
-
 Fix timezone issues
 - Timezones appear to be used and applied inconsistently across the application. Different objects stored at the same time are being written with created_at 7 hours different from each other
 - We need to centralize timestamp/timezone logic within the codebase, so that all components know the correct current time
 - The user's local timezone should dictate the timezone that is presented in the web UI
-
-Control costs
-- Need a more efficient way to build context
-- Batch-process information into embeddings and use vector lookup?
-- Any functions that can be converted from LLM calls to deterministic logic?
 
 Add tools to the User Interface
 - On the Todos and Tasks tabs of the web UI, add edit functionality that allows me to manually update the status of individual Todos and Tasks

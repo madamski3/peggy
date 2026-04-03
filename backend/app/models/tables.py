@@ -37,6 +37,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -67,6 +68,7 @@ class ProfileFact(Base):
         DateTime(timezone=True), server_default=text("now()")
     )
     last_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
 
 
 class Person(Base):
@@ -88,6 +90,7 @@ class Person(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
 
 
 class SeedFieldVersion(Base):
@@ -249,6 +252,7 @@ class Interaction(Base):
     parsed_intent: Mapped[str | None] = mapped_column(Text)
     assistant_response: Mapped[dict | None] = mapped_column(JSONB)
     actions_taken: Mapped[dict | None] = mapped_column(JSONB)
+    message_chain: Mapped[list | None] = mapped_column(JSONB)
     feedback: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")

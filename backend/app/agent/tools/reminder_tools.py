@@ -57,33 +57,18 @@ async def handle_set_reminder(db: AsyncSession, **kwargs: Any) -> dict:
 
 register_tool(ToolDefinition(
     name="set_reminder",
-    description=(
-        "Set a reminder for the user. Creates a todo, a scheduled task, and "
-        "a push notification at the specified time — all in one call. Use this "
-        "when the user says 'remind me to [X] at [time]'."
-    ),
+    description="Set a reminder with push notification at a specific time.",
     input_schema={
         "type": "object",
         "properties": {
-            "title": {
-                "type": "string",
-                "description": "What to remind the user about (e.g. 'Call the vet')",
-            },
-            "remind_at": {
-                "type": "string",
-                "description": "ISO 8601 datetime for when to send the reminder (e.g. '2026-03-29T15:00:00-07:00')",
-            },
-            "description": {
-                "type": "string",
-                "description": "Optional additional details for the reminder",
-            },
-            "estimated_duration_minutes": {
-                "type": "integer",
-                "description": "Estimated duration in minutes (default: 5)",
-            },
+            "title": {"type": "string"},
+            "remind_at": {"type": "string", "description": "ISO 8601 datetime with timezone."},
+            "description": {"type": "string"},
+            "estimated_duration_minutes": {"type": "integer"},
         },
         "required": ["title", "remind_at"],
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_set_reminder,
+    category="todo",
 ))

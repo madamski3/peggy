@@ -85,22 +85,21 @@ async def handle_cancel_task(db: AsyncSession, **kwargs: Any) -> dict:
 
 register_tool(ToolDefinition(
     name="get_tasks",
-    description="Get a filtered list of tasks. Use to see what's scheduled for a given day or for a specific todo.",
+    description="Get tasks, optionally filtered by status, date, or todo.",
     input_schema={
         "type": "object",
         "properties": {
             "filters": {
                 "type": "object",
-                "description": "Optional filters.",
                 "properties": {
-                    "status": {"type": "string", "description": "Filter by status (scheduled, in_progress, completed, cancelled)."},
-                    "todo_id": {"type": "string", "description": "Filter by parent todo UUID."},
-                    "scheduled_date": {"type": "string", "description": "ISO date — return tasks scheduled on this day."},
+                    "status": {"type": "string", "enum": ["scheduled", "in_progress", "completed", "cancelled"]},
+                    "todo_id": {"type": "string"},
+                    "scheduled_date": {"type": "string", "description": "ISO date."},
                     "date_range": {
                         "type": "object",
                         "properties": {
-                            "start": {"type": "string", "description": "ISO datetime start."},
-                            "end": {"type": "string", "description": "ISO datetime end."},
+                            "start": {"type": "string"},
+                            "end": {"type": "string"},
                         },
                         "required": ["start", "end"],
                     },
@@ -115,17 +114,17 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="create_task",
-    description="Create a single scheduled task linked to a todo.",
+    description="Create a scheduled task linked to a todo.",
     input_schema={
         "type": "object",
         "properties": {
-            "todo_id": {"type": "string", "description": "UUID of the parent todo."},
-            "title": {"type": "string", "description": "Task title."},
-            "description": {"type": "string", "description": "Additional details."},
-            "scheduled_start": {"type": "string", "description": "ISO datetime for when to start."},
-            "scheduled_end": {"type": "string", "description": "ISO datetime for when it ends."},
+            "todo_id": {"type": "string"},
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "scheduled_start": {"type": "string", "description": "ISO datetime."},
+            "scheduled_end": {"type": "string", "description": "ISO datetime."},
             "estimated_duration_minutes": {"type": "integer"},
-            "position": {"type": "integer", "description": "Order position within the todo's tasks."},
+            "position": {"type": "integer"},
         },
         "required": ["todo_id", "title"],
     },
@@ -136,21 +135,20 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="create_tasks_batch",
-    description="Create multiple tasks for a todo at once. Use when decomposing a todo into scheduled work blocks. This is a high-stakes action — always present the plan to the user and get confirmation before calling this.",
+    description="Create multiple tasks for a todo at once (requires confirmation).",
     input_schema={
         "type": "object",
         "properties": {
-            "todo_id": {"type": "string", "description": "UUID of the parent todo."},
+            "todo_id": {"type": "string"},
             "tasks": {
                 "type": "array",
-                "description": "List of tasks to create.",
                 "items": {
                     "type": "object",
                     "properties": {
                         "title": {"type": "string"},
                         "description": {"type": "string"},
-                        "scheduled_start": {"type": "string", "description": "ISO datetime."},
-                        "scheduled_end": {"type": "string", "description": "ISO datetime."},
+                        "scheduled_start": {"type": "string"},
+                        "scheduled_end": {"type": "string"},
                         "estimated_duration_minutes": {"type": "integer"},
                     },
                     "required": ["title"],
@@ -166,14 +164,13 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="update_task",
-    description="Update fields on an existing task (reschedule, change title, etc.).",
+    description="Update fields on an existing task.",
     input_schema={
         "type": "object",
         "properties": {
-            "task_id": {"type": "string", "description": "UUID of the task to update."},
+            "task_id": {"type": "string"},
             "fields": {
                 "type": "object",
-                "description": "Fields to update.",
                 "properties": {
                     "title": {"type": "string"},
                     "description": {"type": "string"},
@@ -194,13 +191,13 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="complete_task",
-    description="Mark a task as completed. If all tasks for the parent todo are done, the todo is auto-completed too.",
+    description="Mark a task as completed; auto-completes parent todo if all tasks done.",
     input_schema={
         "type": "object",
         "properties": {
-            "task_id": {"type": "string", "description": "UUID of the task to complete."},
-            "actual_duration_minutes": {"type": "integer", "description": "How long it actually took."},
-            "completion_notes": {"type": "string", "description": "Notes about how it went."},
+            "task_id": {"type": "string"},
+            "actual_duration_minutes": {"type": "integer"},
+            "completion_notes": {"type": "string"},
         },
         "required": ["task_id"],
     },
@@ -211,13 +208,13 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="defer_task",
-    description="Reschedule a task to a new time. Increments the deferred count for tracking.",
+    description="Reschedule a task to a new time and increment deferred count.",
     input_schema={
         "type": "object",
         "properties": {
-            "task_id": {"type": "string", "description": "UUID of the task to defer."},
-            "new_scheduled_start": {"type": "string", "description": "New ISO datetime start."},
-            "new_scheduled_end": {"type": "string", "description": "New ISO datetime end."},
+            "task_id": {"type": "string"},
+            "new_scheduled_start": {"type": "string", "description": "ISO datetime."},
+            "new_scheduled_end": {"type": "string", "description": "ISO datetime."},
         },
         "required": ["task_id"],
     },
@@ -228,11 +225,11 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="cancel_task",
-    description="Cancel a task (soft delete — marks as cancelled, does not remove).",
+    description="Cancel a task (soft delete).",
     input_schema={
         "type": "object",
         "properties": {
-            "task_id": {"type": "string", "description": "UUID of the task to cancel."},
+            "task_id": {"type": "string"},
         },
         "required": ["task_id"],
     },

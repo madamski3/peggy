@@ -44,22 +44,12 @@ async def handle_search_emails(db: AsyncSession, **kwargs: Any) -> dict:
 
 register_tool(ToolDefinition(
     name="get_recent_emails",
-    description=(
-        "List recent emails from the user's inbox. Returns subject, sender, "
-        "date, snippet, and unread status. Use this to check what's new in "
-        "the user's inbox or to find a specific recent email."
-    ),
+    description="List recent emails from the inbox.",
     input_schema={
         "type": "object",
         "properties": {
-            "max_results": {
-                "type": "integer",
-                "description": "Maximum number of emails to return (default: 10)",
-            },
-            "query": {
-                "type": "string",
-                "description": "Optional Gmail search query to filter results (e.g. 'is:unread', 'from:amazon')",
-            },
+            "max_results": {"type": "integer"},
+            "query": {"type": "string", "description": "Gmail search query (e.g. 'is:unread', 'from:amazon')."},
         },
     },
     tier=ActionTier.READ_ONLY,
@@ -70,18 +60,11 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="get_email_detail",
-    description=(
-        "Get the full content of a specific email by its message ID. "
-        "Returns subject, from, to, date, and the plain text body. "
-        "Use this after listing emails to read one in full."
-    ),
+    description="Get the full content of an email by message ID.",
     input_schema={
         "type": "object",
         "properties": {
-            "message_id": {
-                "type": "string",
-                "description": "The Gmail message ID (from get_recent_emails or search_emails)",
-            },
+            "message_id": {"type": "string"},
         },
         "required": ["message_id"],
     },
@@ -93,22 +76,12 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="search_emails",
-    description=(
-        "Search the user's emails using Gmail search syntax. "
-        "Supports queries like 'from:amazon subject:shipping', "
-        "'is:unread', 'after:2026/03/01', 'has:attachment', etc."
-    ),
+    description="Search emails using Gmail search syntax.",
     input_schema={
         "type": "object",
         "properties": {
-            "query": {
-                "type": "string",
-                "description": "Gmail search query (same syntax as the Gmail search bar)",
-            },
-            "max_results": {
-                "type": "integer",
-                "description": "Maximum number of results (default: 10)",
-            },
+            "query": {"type": "string", "description": "Gmail search query."},
+            "max_results": {"type": "integer"},
         },
         "required": ["query"],
     },

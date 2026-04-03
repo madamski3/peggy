@@ -75,25 +75,13 @@ async def handle_find_free_time(db: AsyncSession, **kwargs: Any) -> dict:
 
 register_tool(ToolDefinition(
     name="get_calendar_events",
-    description=(
-        "List upcoming Google Calendar events within a time range. "
-        "Returns event summaries, times, locations, and whether they were created by the assistant."
-    ),
+    description="List Google Calendar events within a time range.",
     input_schema={
         "type": "object",
         "properties": {
-            "time_min": {
-                "type": "string",
-                "description": "Start of time range in ISO 8601 format (e.g., 2026-03-28T00:00:00-04:00)",
-            },
-            "time_max": {
-                "type": "string",
-                "description": "End of time range in ISO 8601 format (e.g., 2026-03-28T23:59:59-04:00)",
-            },
-            "max_results": {
-                "type": "integer",
-                "description": "Maximum number of events to return (default: 20)",
-            },
+            "time_min": {"type": "string", "description": "ISO 8601 datetime."},
+            "time_max": {"type": "string", "description": "ISO 8601 datetime."},
+            "max_results": {"type": "integer"},
         },
         "required": ["time_min", "time_max"],
     },
@@ -105,38 +93,16 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="create_calendar_event",
-    description=(
-        "Create a new event on the user's Google Calendar. "
-        "The event will be tagged as assistant-created with a distinct color. "
-        "Use ISO 8601 datetime strings with timezone for start and end."
-    ),
+    description="Create a Google Calendar event, tagged as assistant-created.",
     input_schema={
         "type": "object",
         "properties": {
-            "summary": {
-                "type": "string",
-                "description": "Event title",
-            },
-            "start": {
-                "type": "string",
-                "description": "Event start time in ISO 8601 format (e.g., 2026-03-28T12:00:00-04:00) or date (e.g., 2026-03-28) for all-day events",
-            },
-            "end": {
-                "type": "string",
-                "description": "Event end time in ISO 8601 format or date for all-day events",
-            },
-            "description": {
-                "type": "string",
-                "description": "Event description or notes",
-            },
-            "location": {
-                "type": "string",
-                "description": "Event location",
-            },
-            "all_day": {
-                "type": "boolean",
-                "description": "If true, create an all-day event using date strings (default: false)",
-            },
+            "summary": {"type": "string"},
+            "start": {"type": "string", "description": "ISO 8601 datetime or date for all-day."},
+            "end": {"type": "string", "description": "ISO 8601 datetime or date for all-day."},
+            "description": {"type": "string"},
+            "location": {"type": "string"},
+            "all_day": {"type": "boolean"},
         },
         "required": ["summary", "start", "end"],
     },
@@ -148,37 +114,16 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="update_calendar_event",
-    description=(
-        "Update an existing Google Calendar event. "
-        "Only the fields provided will be updated; others remain unchanged."
-    ),
+    description="Update fields on an existing Google Calendar event.",
     input_schema={
         "type": "object",
         "properties": {
-            "event_id": {
-                "type": "string",
-                "description": "The Google Calendar event ID to update",
-            },
-            "summary": {
-                "type": "string",
-                "description": "New event title",
-            },
-            "start": {
-                "type": "string",
-                "description": "New start time in ISO 8601 format",
-            },
-            "end": {
-                "type": "string",
-                "description": "New end time in ISO 8601 format",
-            },
-            "description": {
-                "type": "string",
-                "description": "New event description",
-            },
-            "location": {
-                "type": "string",
-                "description": "New event location",
-            },
+            "event_id": {"type": "string"},
+            "summary": {"type": "string"},
+            "start": {"type": "string", "description": "ISO 8601 datetime."},
+            "end": {"type": "string", "description": "ISO 8601 datetime."},
+            "description": {"type": "string"},
+            "location": {"type": "string"},
         },
         "required": ["event_id"],
     },
@@ -190,17 +135,11 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="delete_calendar_event",
-    description=(
-        "Delete an event from the user's Google Calendar. "
-        "This is irreversible — use with caution."
-    ),
+    description="Delete a Google Calendar event (irreversible).",
     input_schema={
         "type": "object",
         "properties": {
-            "event_id": {
-                "type": "string",
-                "description": "The Google Calendar event ID to delete",
-            },
+            "event_id": {"type": "string"},
         },
         "required": ["event_id"],
     },
@@ -212,25 +151,13 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="find_free_time",
-    description=(
-        "Find available time slots in the user's calendar within a given time range. "
-        "Returns gaps of at least the specified duration between existing events."
-    ),
+    description="Find free time slots between calendar events.",
     input_schema={
         "type": "object",
         "properties": {
-            "time_min": {
-                "type": "string",
-                "description": "Start of search range in ISO 8601 format",
-            },
-            "time_max": {
-                "type": "string",
-                "description": "End of search range in ISO 8601 format",
-            },
-            "duration_minutes": {
-                "type": "integer",
-                "description": "Minimum slot duration in minutes (default: 30)",
-            },
+            "time_min": {"type": "string", "description": "ISO 8601 datetime."},
+            "time_max": {"type": "string", "description": "ISO 8601 datetime."},
+            "duration_minutes": {"type": "integer", "description": "Minimum slot length in minutes (default: 30)."},
         },
         "required": ["time_min", "time_max"],
     },

@@ -21,50 +21,31 @@ async def handle_execute_daily_plan(db: AsyncSession, **kwargs: Any) -> dict:
 
 register_tool(ToolDefinition(
     name="execute_daily_plan",
-    description=(
-        "Execute a full daily plan: create scheduled tasks for multiple todos and "
-        "add corresponding calendar events. Use this after presenting a proposed "
-        "daily plan and receiving user confirmation. This is a high-stakes action — "
-        "always present the plan first and wait for the user to approve."
-    ),
+    description="Execute a daily plan: create tasks and calendar events for multiple todos (requires confirmation).",
     input_schema={
         "type": "object",
         "properties": {
             "plan_items": {
                 "type": "array",
-                "description": "List of plan items, one per todo to schedule.",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "todo_id": {
-                            "type": "string",
-                            "description": "UUID of the parent todo.",
-                        },
+                        "todo_id": {"type": "string"},
                         "tasks": {
                             "type": "array",
-                            "description": "Tasks to create for this todo.",
                             "items": {
                                 "type": "object",
                                 "properties": {
                                     "title": {"type": "string"},
                                     "description": {"type": "string"},
-                                    "scheduled_start": {
-                                        "type": "string",
-                                        "description": "ISO 8601 datetime with timezone.",
-                                    },
-                                    "scheduled_end": {
-                                        "type": "string",
-                                        "description": "ISO 8601 datetime with timezone.",
-                                    },
+                                    "scheduled_start": {"type": "string"},
+                                    "scheduled_end": {"type": "string"},
                                     "estimated_duration_minutes": {"type": "integer"},
                                 },
                                 "required": ["title", "scheduled_start", "scheduled_end"],
                             },
                         },
-                        "create_calendar_events": {
-                            "type": "boolean",
-                            "description": "Whether to also create Google Calendar events for these tasks (default: true).",
-                        },
+                        "create_calendar_events": {"type": "boolean"},
                     },
                     "required": ["todo_id", "tasks"],
                 },

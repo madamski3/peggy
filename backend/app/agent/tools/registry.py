@@ -66,28 +66,48 @@ def get_all_tool_schemas() -> list[dict[str, Any]]:
 
 # Maps detected intents to the tool categories they unlock.
 _INTENT_TOOL_CATEGORIES: dict[str, set[str]] = {
-    "planning": {"planning", "calendar", "task"},
+    "planning": {"planning", "calendar", "task", "todo"},
     "calendar": {"calendar"},
     "todo": {"todo", "task"},
     "list": {"list"},
     "email": {"email"},
     "profile": {"profile"},
     "financial": {"financial"},
+    "conversation": {"conversation"},
+}
+
+# Lightweight read-only tools sent when no intents are detected.
+# Covers the most common domains so the model can answer ambiguous queries
+# without loading all 35+ tool schemas.
+_GENERAL_TOOLS: set[str] = {
+    "get_todos",
+    "get_calendar_events",
+    "search_profile",
+    "get_lists",
+    "search_conversations",
+    "get_recent_emails",
 }
 
 
 def get_tool_schemas_for_intents(intents: set[str]) -> list[dict[str, Any]]:
     """Return tool schemas filtered by detected intents.
 
-    Core tools are always included. Intent-specific tools are added when
-    their category matches a detected intent. If no intents are detected,
-    all tools are included as a safe fallback.
+    Intent-specific tools are included when their category matches a
+    detected intent. When no intents are detected, only a curated set
+    of read-only general tools is sent instead of the full registry.
     """
     if not intents:
-        # Unknown query — include everything so the LLM can handle it
-        return get_all_tool_schemas()
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema,
+            }
+            for tool in TOOL_REGISTRY.values()
+            if tool.name in _GENERAL_TOOLS
+        ]
 
-    categories = {"core"}
+    categories: set[str] = set()
     for intent in intents:
         categories.update(_INTENT_TOOL_CATEGORIES.get(intent, set()))
 

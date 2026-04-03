@@ -72,15 +72,15 @@ async def handle_bulk_complete_list_items(db: AsyncSession, **kwargs: Any) -> di
 
 register_tool(ToolDefinition(
     name="get_lists",
-    description="Get all lists or a filtered subset. Use to find a specific list like a grocery or shopping list.",
+    description="Get lists, optionally filtered by type or status.",
     input_schema={
         "type": "object",
         "properties": {
             "filters": {
                 "type": "object",
                 "properties": {
-                    "type": {"type": "string", "description": "Filter by list type (grocery, shopping, custom, etc.)."},
-                    "status": {"type": "string", "description": "Filter by status (active, archived)."},
+                    "type": {"type": "string"},
+                    "status": {"type": "string", "enum": ["active", "archived"]},
                 },
             },
         },
@@ -92,15 +92,15 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="get_list_items",
-    description="Get items from a specific list, optionally filtered by status.",
+    description="Get items from a specific list.",
     input_schema={
         "type": "object",
         "properties": {
-            "list_id": {"type": "string", "description": "UUID of the list."},
+            "list_id": {"type": "string"},
             "filters": {
                 "type": "object",
                 "properties": {
-                    "status": {"type": "string", "description": "Filter by item status (pending, completed)."},
+                    "status": {"type": "string", "enum": ["pending", "completed"]},
                 },
             },
         },
@@ -113,13 +113,13 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="create_list",
-    description="Create a new list (e.g., grocery list, packing list, project checklist).",
+    description="Create a new list.",
     input_schema={
         "type": "object",
         "properties": {
-            "name": {"type": "string", "description": "Name of the list."},
-            "type": {"type": "string", "description": "Type of list (grocery, shopping, packing, custom). Default: custom."},
-            "description": {"type": "string", "description": "Optional description."},
+            "name": {"type": "string"},
+            "type": {"type": "string"},
+            "description": {"type": "string"},
         },
         "required": ["name"],
     },
@@ -130,13 +130,13 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="add_list_item",
-    description="Add an item to an existing list.",
+    description="Add an item to a list.",
     input_schema={
         "type": "object",
         "properties": {
-            "list_id": {"type": "string", "description": "UUID of the list to add to."},
-            "name": {"type": "string", "description": "Name of the item."},
-            "notes": {"type": "string", "description": "Optional notes."},
+            "list_id": {"type": "string"},
+            "name": {"type": "string"},
+            "notes": {"type": "string"},
         },
         "required": ["list_id", "name"],
     },
@@ -147,11 +147,11 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="complete_list_item",
-    description="Mark a single list item as done.",
+    description="Mark a list item as done.",
     input_schema={
         "type": "object",
         "properties": {
-            "item_id": {"type": "string", "description": "UUID of the list item to complete."},
+            "item_id": {"type": "string"},
         },
         "required": ["item_id"],
     },
@@ -162,15 +162,15 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="bulk_complete_list_items",
-    description="Mark all pending items on a list as completed, optionally excluding specific items.",
+    description="Mark all pending items on a list as completed.",
     input_schema={
         "type": "object",
         "properties": {
-            "list_id": {"type": "string", "description": "UUID of the list."},
+            "list_id": {"type": "string"},
             "exceptions": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "UUIDs of items to NOT complete (keep pending).",
+                "description": "Item UUIDs to exclude from completion.",
             },
         },
         "required": ["list_id"],

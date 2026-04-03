@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     google_redirect_uri: str = "http://peggy.michaeladamski.com:3002/api/auth/google/callback"
     google_calendar_id: str = "primary"
 
+    # OpenAI (embeddings)
+    openai_api_key: str = ""
+
     # ntfy push notifications
     ntfy_base_url: str = "http://ntfy:80"
     ntfy_topic: str = "assistant"

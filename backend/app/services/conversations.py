@@ -50,7 +50,8 @@ async def search_conversations(
 
     stmt = stmt.order_by(Interaction.created_at.desc()).limit(20)
     result = await db.execute(stmt)
-    return [model_to_dict(i) for i in result.scalars().all()]
+    _exclude_heavy = {"message_chain"}
+    return [model_to_dict(i, exclude=_exclude_heavy) for i in result.scalars().all()]
 
 
 async def get_recent_conversations(db: AsyncSession, n: int = 5) -> list[dict]:
@@ -63,7 +64,8 @@ async def get_recent_conversations(db: AsyncSession, n: int = 5) -> list[dict]:
     rows = list(result.scalars().all())
     # Return in chronological order (oldest first) for conversation context
     rows.reverse()
-    return [model_to_dict(i) for i in rows]
+    _exclude_heavy = {"message_chain"}
+    return [model_to_dict(i, exclude=_exclude_heavy) for i in rows]
 
 
 async def get_session_history(
@@ -87,6 +89,7 @@ async def log_interaction(
     parsed_intent: str | None,
     assistant_response: dict[str, Any] | None,
     actions_taken: list[dict[str, Any]] | None,
+    message_chain: list[dict[str, Any]] | None = None,
 ) -> Interaction:
     """Persist an interaction to the log."""
     interaction = Interaction(
@@ -96,6 +99,7 @@ async def log_interaction(
         parsed_intent=parsed_intent,
         assistant_response=assistant_response,
         actions_taken=actions_taken,
+        message_chain=message_chain,
     )
     db.add(interaction)
     await db.flush()
