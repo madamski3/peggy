@@ -41,8 +41,8 @@ PROFILE_FIELD_MAPPINGS: dict[str, dict] = {
         "name_field": "name",
     },
     # Preferences
-    "dietary_likes": {"category": "preferences", "key_prefix": "dietary.likes", "type": "list"},
-    "dietary_dislikes": {"category": "preferences", "key_prefix": "dietary.dislikes", "type": "list"},
+    # dietary_likes and dietary_dislikes are handled by _consolidate_dietary()
+    # in ingestion.py — they produce a single "preferences/dietary" fact.
     "communication_style": {"category": "preferences", "key": "communication.style", "type": "single"},
     # Career
     "roles": {

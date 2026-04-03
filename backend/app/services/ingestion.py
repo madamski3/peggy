@@ -25,6 +25,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tables import ProfileFact, SeedFieldVersion
+from app.services.embeddings import fact_to_text, get_embedding
 from app.services.field_mappings import PEOPLE_FIELD_MAPPINGS, PROFILE_FIELD_MAPPINGS
 
 
@@ -245,6 +246,10 @@ async def ingest_field_changes(
             db.add(new_fact)
             await db.flush()  # Get the ID assigned
 
+            # Generate embedding for the new fact
+            text = fact_to_text(new_fact.category, new_fact.key, new_fact.value)
+            new_fact.embedding = await get_embedding(text)
+
             # Supersede existing facts with same category+key (excluding the one we just created)
             result = await db.execute(
                 select(ProfileFact).where(
@@ -261,5 +266,122 @@ async def ingest_field_changes(
 
             created_facts.append(new_fact)
 
+    # Post-processing: consolidate dietary preferences into a single fact
+    if entity_type == "profile":
+        dietary_fact = await _consolidate_dietary(db, fields)
+        if dietary_fact:
+            created_facts.append(dietary_fact)
+
     await db.commit()
     return created_facts
+
+
+# ── Dietary consolidation ───────────────────────────────────────
+
+
+_DIETARY_FIELD_KEYS = {"dietary_likes", "dietary_dislikes"}
+
+
+async def _consolidate_dietary(
+    db: AsyncSession,
+    fields: list[dict[str, Any]],
+) -> ProfileFact | None:
+    """Consolidate dietary_likes and dietary_dislikes into one ProfileFact.
+
+    Called after the main per-field loop. Reads current values from the
+    submitted fields or falls back to the latest SeedFieldVersion.
+    """
+    submitted_keys = {f["field_key"] for f in fields}
+    if not submitted_keys & _DIETARY_FIELD_KEYS:
+        return None  # No dietary fields in this batch
+
+    # Resolve current values: prefer submitted, fall back to saved version
+    likes: list[str] = []
+    dislikes: list[str] = []
+
+    for field_key, target in [("dietary_likes", "likes"), ("dietary_dislikes", "dislikes")]:
+        # Check submitted fields first
+        submitted = next((f["value"] for f in fields if f["field_key"] == field_key), None)
+        if submitted is not None:
+            items = submitted if isinstance(submitted, list) else []
+        else:
+            # Fall back to latest saved version
+            version = await _get_latest_version(db, "profile", None, field_key)
+            if version is not None:
+                try:
+                    items = json.loads(version.value)
+                    if not isinstance(items, list):
+                        items = []
+                except (json.JSONDecodeError, TypeError):
+                    items = []
+            else:
+                items = []
+
+        if target == "likes":
+            likes = [str(x).strip() for x in items if str(x).strip()]
+        else:
+            dislikes = [str(x).strip() for x in items if str(x).strip()]
+
+        # Still create SeedFieldVersion for diff detection on re-saves
+        if submitted is not None:
+            serialized = _serialize_value(submitted)
+            latest = await _get_latest_version(db, "profile", None, field_key)
+            if latest is None or latest.value != serialized:
+                db.add(SeedFieldVersion(
+                    entity_type="profile",
+                    entity_id=None,
+                    field_key=field_key,
+                    value=serialized,
+                ))
+
+    value: dict[str, Any] = {}
+    if likes:
+        value["likes"] = likes
+    if dislikes:
+        value["dislikes"] = dislikes
+
+    if not value:
+        return None
+
+    # Create consolidated fact
+    new_fact = ProfileFact(
+        category="preferences",
+        key="dietary",
+        value=value,
+        provenance="seeded",
+        confidence=1.0,
+    )
+    db.add(new_fact)
+    await db.flush()
+
+    text = fact_to_text(new_fact.category, new_fact.key, new_fact.value)
+    new_fact.embedding = await get_embedding(text)
+
+    # Supersede previous consolidated dietary fact
+    result = await db.execute(
+        select(ProfileFact).where(
+            and_(
+                ProfileFact.category == "preferences",
+                ProfileFact.key == "dietary",
+                ProfileFact.superseded_by.is_(None),
+                ProfileFact.id != new_fact.id,
+            )
+        )
+    )
+    for old in result.scalars().all():
+        old.superseded_by = new_fact.id
+
+    # Also supersede any old per-item dietary facts
+    result = await db.execute(
+        select(ProfileFact).where(
+            and_(
+                ProfileFact.category == "preferences",
+                ProfileFact.key.startswith("dietary."),
+                ProfileFact.superseded_by.is_(None),
+            )
+        )
+    )
+    for old in result.scalars().all():
+        old.superseded_by = new_fact.id
+
+    return new_fact
