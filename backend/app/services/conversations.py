@@ -11,7 +11,6 @@ prior turns, and calls log_interaction() after generating a response.
 """
 
 import uuid
-from datetime import datetime
 from typing import Any
 
 import anthropic
@@ -20,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tables import Interaction, LlmCall
 from app.services.serialization import model_to_dict
+from app.services.timezone import parse_dt
 
 # Sonnet 4.6 pricing (per million tokens)
 _COST_PER_M_INPUT = 3.0
@@ -44,9 +44,9 @@ async def search_conversations(
 
     if date_range:
         if "start" in date_range:
-            stmt = stmt.where(Interaction.created_at >= datetime.fromisoformat(date_range["start"]))
+            stmt = stmt.where(Interaction.created_at >= parse_dt(date_range["start"]))
         if "end" in date_range:
-            stmt = stmt.where(Interaction.created_at <= datetime.fromisoformat(date_range["end"]))
+            stmt = stmt.where(Interaction.created_at <= parse_dt(date_range["end"]))
 
     stmt = stmt.order_by(Interaction.created_at.desc()).limit(20)
     result = await db.execute(stmt)

@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tables import Task, Todo
 from app.services.serialization import model_to_dict
+from app.services.timezone import get_user_tz, parse_dt
 
 
 async def get_tasks(db: AsyncSession, filters: dict[str, Any] | None = None) -> list[dict]:
@@ -44,9 +45,10 @@ async def get_tasks(db: AsyncSession, filters: dict[str, Any] | None = None) -> 
     if "todo_id" in filters:
         query = query.where(Task.todo_id == _parse_uuid(filters["todo_id"]))
     if "scheduled_date" in filters:
-        day = datetime.fromisoformat(filters["scheduled_date"]).date()
-        day_start = datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
-        day_end = datetime(day.year, day.month, day.day, 23, 59, 59, tzinfo=timezone.utc)
+        user_tz = await get_user_tz(db)
+        day = parse_dt(filters["scheduled_date"]).date()
+        day_start = datetime(day.year, day.month, day.day, tzinfo=user_tz)
+        day_end = datetime(day.year, day.month, day.day, 23, 59, 59, tzinfo=user_tz)
         query = query.where(
             and_(
                 Task.scheduled_start >= day_start,
@@ -55,8 +57,8 @@ async def get_tasks(db: AsyncSession, filters: dict[str, Any] | None = None) -> 
         )
     if "date_range" in filters:
         dr = filters["date_range"]
-        query = query.where(Task.scheduled_start >= datetime.fromisoformat(dr["start"]))
-        query = query.where(Task.scheduled_start <= datetime.fromisoformat(dr["end"]))
+        query = query.where(Task.scheduled_start >= parse_dt(dr["start"]))
+        query = query.where(Task.scheduled_start <= parse_dt(dr["end"]))
 
     query = query.order_by(Task.scheduled_start.asc().nullslast(), Task.position.asc().nullslast())
     result = await db.execute(query)
@@ -230,9 +232,4 @@ def _parse_uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
     return uuid.UUID(value)
 
 
-def _parse_dt(value: str | datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(value)
+_parse_dt = parse_dt

@@ -17,12 +17,12 @@ the agent via tool calls — NOT pre-loaded into the system prompt.
 import json
 import uuid
 from datetime import datetime
-from zoneinfo import ZoneInfo
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.profile import get_active_facts
+from app.services.timezone import user_tz_from_facts
 
 
 # ── Intent Detection ─────────────────────────────────────────────
@@ -101,19 +101,16 @@ async def assemble_context(
 
     # Resolve user timezone and name from profile facts
     core_facts = await get_active_facts(db)
-    user_tz_name = "America/Los_Angeles"
+    user_tz = user_tz_from_facts(core_facts)
     user_name = None
     for fact in core_facts:
-        if fact.key == "timezone" and fact.value:
-            user_tz_name = fact.value
         if fact.key == "name" and fact.value:
             user_name = fact.value
-    user_tz = ZoneInfo(user_tz_name)
     now = datetime.now(user_tz)
 
     return {
         "current_datetime": now.strftime("%A, %B %d, %Y at %I:%M %p %Z"),
-        "timezone": user_tz_name,
+        "timezone": str(user_tz),
         "user_name": user_name or "the user",
         "intents": intents,
     }

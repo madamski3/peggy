@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     ntfy_topic: str = "assistant"
     notification_poll_seconds: int = 30
 
+    # Timezone
+    default_timezone: str = "America/Los_Angeles"
+
     # Proactive job schedules
     morning_briefing_enabled: bool = True
     morning_briefing_default_hour: int = 7

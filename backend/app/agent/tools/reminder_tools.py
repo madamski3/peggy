@@ -4,13 +4,13 @@ Registered tools:
   - set_reminder (LOW_STAKES) -- create a todo + task + push notification
 """
 
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.tools.registry import ActionTier, ToolDefinition, register_tool
 from app.services.notifications import schedule_notification
+from app.services.timezone import parse_dt
 from app.services.todos import create_todo_with_task
 
 
@@ -25,11 +25,7 @@ async def handle_set_reminder(db: AsyncSession, **kwargs: Any) -> dict:
     title = kwargs["title"]
     description = kwargs.get("description")
 
-    # Parse remind_at to datetime
-    if isinstance(remind_at, str):
-        remind_at_dt = datetime.fromisoformat(remind_at)
-    else:
-        remind_at_dt = remind_at
+    remind_at_dt = parse_dt(remind_at)
 
     # Create todo + task
     result = await create_todo_with_task(

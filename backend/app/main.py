@@ -28,6 +28,7 @@ from app.services.scheduled_jobs import (
     key_date_alerts,
     morning_briefing,
 )
+from app.services.timezone import get_user_tz
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,11 @@ scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Resolve user timezone so cron jobs fire at local time, not UTC
+    async with async_session_maker() as db:
+        user_tz = await get_user_tz(db)
+    logger.info("Scheduler using timezone: %s", user_tz)
+
     # Startup
     scheduler.add_job(
         process_due_notifications,
@@ -50,6 +56,7 @@ async def lifespan(app: FastAPI):
             CronTrigger(
                 hour=settings.morning_briefing_default_hour,
                 minute=settings.morning_briefing_default_minute,
+                timezone=user_tz,
             ),
             args=[async_session_maker],
             id="morning_briefing",
@@ -57,14 +64,14 @@ async def lifespan(app: FastAPI):
     if settings.deadline_warning_enabled:
         scheduler.add_job(
             deadline_warning_scan,
-            CronTrigger(hour=settings.deadline_warning_hour, minute=0),
+            CronTrigger(hour=settings.deadline_warning_hour, minute=0, timezone=user_tz),
             args=[async_session_maker],
             id="deadline_warning",
         )
     if settings.key_date_alert_enabled:
         scheduler.add_job(
             key_date_alerts,
-            CronTrigger(hour=settings.key_date_alert_hour, minute=0),
+            CronTrigger(hour=settings.key_date_alert_hour, minute=0, timezone=user_tz),
             args=[async_session_maker],
             id="key_date_alerts",
         )

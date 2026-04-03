@@ -12,7 +12,6 @@ Job types:
 
 import logging
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -21,7 +20,7 @@ from app.config import settings
 from app.models.tables import Person
 from app.services.notifications import send_ntfy
 from app.services.proactive import invoke_agent_proactively
-from app.services.profile import get_active_facts
+from app.services.timezone import get_user_tz
 from app.services.todos import get_todos
 
 logger = logging.getLogger(__name__)
@@ -61,14 +60,7 @@ async def deadline_warning_scan(session_factory: async_sessionmaker) -> None:
     logger.info("Running deadline warning scan")
 
     async with session_factory() as db:
-        # Resolve user timezone
-        core_facts = await get_active_facts(db)
-        user_tz_name = "America/Los_Angeles"
-        for fact in core_facts:
-            if fact.key == "timezone" and fact.value:
-                user_tz_name = fact.value
-                break
-        user_tz = ZoneInfo(user_tz_name)
+        user_tz = await get_user_tz(db)
         now = datetime.now(user_tz)
 
         horizon = now + timedelta(days=settings.deadline_warning_days_ahead)
@@ -117,14 +109,7 @@ async def key_date_alerts(session_factory: async_sessionmaker) -> None:
     logger.info("Running key date alerts scan")
 
     async with session_factory() as db:
-        # Resolve user timezone
-        core_facts = await get_active_facts(db)
-        user_tz_name = "America/Los_Angeles"
-        for fact in core_facts:
-            if fact.key == "timezone" and fact.value:
-                user_tz_name = fact.value
-                break
-        user_tz = ZoneInfo(user_tz_name)
+        user_tz = await get_user_tz(db)
         today = datetime.now(user_tz).date()
 
         horizon = today + timedelta(days=settings.key_date_alert_days_ahead)

@@ -28,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.services.timezone import parse_dt
 from app.models.tables import Credential
 
 logger = logging.getLogger(__name__)
@@ -320,15 +321,15 @@ async def find_free_time(
     busy = result.get("calendars", {}).get(settings.google_calendar_id, {}).get("busy", [])
 
     # Convert to datetime objects
-    range_start = datetime.fromisoformat(time_min)
-    range_end = datetime.fromisoformat(time_max)
+    range_start = parse_dt(time_min)
+    range_end = parse_dt(time_max)
     min_duration = timedelta(minutes=duration_minutes)
 
     busy_periods = []
     for b in busy:
         busy_periods.append((
-            datetime.fromisoformat(b["start"]),
-            datetime.fromisoformat(b["end"]),
+            parse_dt(b["start"]),
+            parse_dt(b["end"]),
         ))
 
     # Sort busy periods

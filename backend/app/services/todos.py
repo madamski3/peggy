@@ -26,6 +26,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.tables import Task, Todo
 from app.services.serialization import model_to_dict
+from app.services.timezone import parse_dt
 
 
 async def get_todos(db: AsyncSession, filters: dict[str, Any] | None = None) -> list[dict]:
@@ -46,7 +47,7 @@ async def get_todos(db: AsyncSession, filters: dict[str, Any] | None = None) -> 
     if "priority" in filters:
         query = query.where(Todo.priority == filters["priority"])
     if "deadline_before" in filters:
-        deadline = datetime.fromisoformat(filters["deadline_before"])
+        deadline = parse_dt(filters["deadline_before"])
         query = query.where(Todo.deadline <= deadline)
     if "tags" in filters:
         for tag in filters["tags"]:
@@ -228,9 +229,4 @@ def _parse_uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
     return uuid.UUID(value)
 
 
-def _parse_dt(value: str | datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(value)
+_parse_dt = parse_dt
