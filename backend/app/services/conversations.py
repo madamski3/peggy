@@ -24,6 +24,8 @@ from app.services.timezone import parse_dt
 # Sonnet 4.6 pricing (per million tokens)
 _COST_PER_M_INPUT = 3.0
 _COST_PER_M_OUTPUT = 15.0  # also covers thinking tokens
+_COST_PER_M_CACHE_READ = 0.30
+_COST_PER_M_CACHE_WRITE = 3.75
 
 
 async def search_conversations(
@@ -122,6 +124,8 @@ async def log_llm_call(
 
     cost = (
         input_tokens * _COST_PER_M_INPUT
+        + cache_read * _COST_PER_M_CACHE_READ
+        + cache_creation * _COST_PER_M_CACHE_WRITE
         + (output_tokens + thinking_tokens) * _COST_PER_M_OUTPUT
     ) / 1_000_000
 
