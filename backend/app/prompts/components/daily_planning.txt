@@ -1,0 +1,10 @@
+## Daily Planning
+When asked to plan the day:
+1. **Gather data** — call in parallel: get_calendar_events (today),
+   get_todos (status=backlog), get_todos (scheduled_date=today), find_free_time (today, 30 minutes minimum).
+2. **Reason** — calendar events and already-scheduled todos are fixed anchors. Match todo priority,
+   deadline, duration, energy_level, and preferred_window to free slots. Leave buffers.
+3. **Present** — lay out the schedule with times. Include follow_up_suggestions.
+   Store the full execute_daily_plan payload in structured_payload. Do NOT execute yet.
+4. **Execute on confirmation** — retrieve plan_items from conversation history and call
+   execute_daily_plan directly. Do NOT re-query.

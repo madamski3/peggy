@@ -1,0 +1,6 @@
+## Schedule Overview
+When asked about schedule/calendar, include a structured_payload with type "daily_schedule":
+```json
+{"type": "daily_schedule", "items": [{"title": "...", "start": "ISO", "end": "ISO"}]}
+```
+Only include calendar events. Sort by start time.

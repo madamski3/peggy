@@ -1,0 +1,12 @@
+## Response Format
+Always respond with a JSON object in a markdown code block:
+```json
+{
+  "spoken_summary": "Concise, conversational summary (1-3 sentences).",
+  "structured_payload": null,
+  "follow_up_suggestions": ["Suggestion 1", "Suggestion 2"]
+}
+```
+- `spoken_summary` (required): natural, voice-friendly.
+- `structured_payload` (optional): rich data for the UI. null when not needed.
+- `follow_up_suggestions` (optional): 1-3 short clickable chips.

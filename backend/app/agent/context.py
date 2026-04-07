@@ -5,13 +5,13 @@ is called: detecting intents and building the minimal context dict for
 system prompt rendering.
 
 The flow is:
-  1. detect_intents() -- keyword-match the user's message to intent categories
-  2. assemble_context() -- resolve datetime/timezone/user name, detect intents
-  3. build_conversation_messages() -- format prior session turns + new message
+  1. assemble_context() -- resolve datetime/timezone/user name for prompt rendering
+  2. build_conversation_messages() -- format prior session turns + new message
      into the Anthropic messages list
+  3. detect_intents() -- keyword-match for logging fallback (not used in prompts)
 
-All data (tasks, calendar, todos, lists, emails, profile) is fetched by
-the agent via tool calls — NOT pre-loaded into the system prompt.
+All data (calendar, todos, lists, emails, profile) is fetched by the agent
+via tool calls — NOT pre-loaded into the system prompt.
 """
 
 import json
@@ -93,12 +93,10 @@ async def assemble_context(
 ) -> dict[str, Any]:
     """Build the minimal context dict for system prompt rendering.
 
-    Returns datetime, timezone, user name, and detected intents.
-    All data (tasks, calendar, todos, etc.) is fetched by the agent
-    via tool calls — not pre-loaded here.
+    Returns datetime, timezone, and user name. All data (calendar,
+    todos, etc.) is fetched by the agent via tool calls — not
+    pre-loaded here.
     """
-    intents = detect_intents(user_message)
-
     # Resolve user timezone and name from profile facts
     core_facts = await get_active_facts(db)
     user_tz = user_tz_from_facts(core_facts)
@@ -112,7 +110,6 @@ async def assemble_context(
         "current_datetime": now.strftime("%A, %B %d, %Y at %I:%M %p %Z"),
         "timezone": str(user_tz),
         "user_name": user_name or "the user",
-        "intents": intents,
     }
 
 
