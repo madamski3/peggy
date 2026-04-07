@@ -1,7 +1,7 @@
 """Reminder tool definitions for the agent.
 
 Registered tools:
-  - set_reminder (LOW_STAKES) -- create a todo + task + push notification
+  - set_reminder (LOW_STAKES) -- create a todo + push notification
 """
 
 from typing import Any
@@ -11,14 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.tools.registry import ActionTier, ToolDefinition, register_tool
 from app.services.notifications import schedule_notification
 from app.services.timezone import parse_dt
-from app.services.todos import create_todo_with_task
+from app.services.todos import create_todo
 
 
 async def handle_set_reminder(db: AsyncSession, **kwargs: Any) -> dict:
-    """Create a todo + task + scheduled push notification in one atomic call.
+    """Create a scheduled todo + push notification in one atomic call.
 
-    This is the "remind me" workflow: the todo tracks what needs doing,
-    the task anchors it to a time, and the notification triggers delivery
+    This is the "remind me" workflow: the todo tracks what needs doing
+    (with a scheduled time), and the notification triggers delivery
     via ntfy when the time arrives (picked up by APScheduler's poll loop).
     """
     remind_at = kwargs["remind_at"]
@@ -27,8 +27,8 @@ async def handle_set_reminder(db: AsyncSession, **kwargs: Any) -> dict:
 
     remind_at_dt = parse_dt(remind_at)
 
-    # Create todo + task
-    result = await create_todo_with_task(
+    # Create scheduled todo
+    result = await create_todo(
         db,
         title=title,
         description=description,
@@ -37,11 +37,10 @@ async def handle_set_reminder(db: AsyncSession, **kwargs: Any) -> dict:
         estimated_duration_minutes=kwargs.get("estimated_duration_minutes", 5),
     )
 
-    # Schedule push notification linked to the task
-    task_id = result["task"]["id"]
+    # Schedule push notification linked to the todo
     notification = await schedule_notification(
         db,
-        task_id=task_id,
+        todo_id=result["id"],
         title=f"Reminder: {title}",
         body=description or title,
         send_at=remind_at_dt,
@@ -54,6 +53,10 @@ async def handle_set_reminder(db: AsyncSession, **kwargs: Any) -> dict:
 register_tool(ToolDefinition(
     name="set_reminder",
     description="Set a reminder with push notification at a specific time.",
+    embedding_text=(
+        "reminder: set_reminder — remind me, set a reminder, alert me, notification "
+        "at a specific time. Remind me to call mom at 3pm. Alert me at 5pm to leave."
+    ),
     input_schema={
         "type": "object",
         "properties": {

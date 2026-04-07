@@ -133,6 +133,17 @@ def _normalize_event(event: dict) -> dict:
     }
 
 
+# ── Calendar ID Resolution ─────────────────────────────────────
+
+
+async def _resolve_calendar_id(db: AsyncSession) -> str:
+    """Return the primary email as calendar ID, or the configured default."""
+    from app.services.profile import get_primary_email
+
+    email = await get_primary_email(db)
+    return email or settings.google_calendar_id
+
+
 # ── Calendar Operations ─────────────────────────────────────────
 
 
@@ -147,10 +158,12 @@ async def list_events(
     if not creds:
         return []
 
-    def _fetch():
+    calendar_id = await _resolve_calendar_id(db)
+
+    def _fetch(cal_id: str):
         service = _build_service(creds)
         result = service.events().list(
-            calendarId=settings.google_calendar_id,
+            calendarId=cal_id,
             timeMin=time_min,
             timeMax=time_max,
             maxResults=max_results,
@@ -159,7 +172,14 @@ async def list_events(
         ).execute()
         return result.get("items", [])
 
-    raw_events = await asyncio.to_thread(_fetch)
+    try:
+        raw_events = await asyncio.to_thread(_fetch, calendar_id)
+    except Exception:
+        if calendar_id != settings.google_calendar_id:
+            logger.warning(f"Calendar API failed for {calendar_id}, falling back to default")
+            raw_events = await asyncio.to_thread(_fetch, settings.google_calendar_id)
+        else:
+            raise
 
     # The Google SDK may have silently refreshed the access token during the
     # API call. Persist it so subsequent calls don't need to refresh again.
@@ -183,6 +203,8 @@ async def create_event(
     if not creds:
         return {"error": "Google Calendar not connected. Visit /api/auth/google to connect."}
 
+    calendar_id = await _resolve_calendar_id(db)
+
     # Tag description
     tagged_description = f"{description}\n{ASSISTANT_TAG}".strip() if description else ASSISTANT_TAG
 
@@ -202,14 +224,21 @@ async def create_event(
         body["start"] = {"dateTime": start, "timeZone": "America/Los_Angeles"}
         body["end"] = {"dateTime": end, "timeZone": "America/Los_Angeles"}
 
-    def _create():
+    def _create(cal_id: str):
         service = _build_service(creds)
         return service.events().insert(
-            calendarId=settings.google_calendar_id,
+            calendarId=cal_id,
             body=body,
         ).execute()
 
-    raw = await asyncio.to_thread(_create)
+    try:
+        raw = await asyncio.to_thread(_create, calendar_id)
+    except Exception:
+        if calendar_id != settings.google_calendar_id:
+            logger.warning(f"Calendar API failed for {calendar_id}, falling back to default")
+            raw = await asyncio.to_thread(_create, settings.google_calendar_id)
+        else:
+            raise
 
     if creds.token:
         await save_google_credentials(db, creds)
@@ -231,11 +260,13 @@ async def update_event(
     if not creds:
         return {"error": "Google Calendar not connected. Visit /api/auth/google to connect."}
 
-    def _update():
+    calendar_id = await _resolve_calendar_id(db)
+
+    def _update(cal_id: str):
         service = _build_service(creds)
         # Fetch current event first
         event = service.events().get(
-            calendarId=settings.google_calendar_id,
+            calendarId=cal_id,
             eventId=event_id,
         ).execute()
 
@@ -257,12 +288,19 @@ async def update_event(
                 event["end"] = {"dateTime": end, "timeZone": "America/Los_Angeles"}
 
         return service.events().update(
-            calendarId=settings.google_calendar_id,
+            calendarId=cal_id,
             eventId=event_id,
             body=event,
         ).execute()
 
-    raw = await asyncio.to_thread(_update)
+    try:
+        raw = await asyncio.to_thread(_update, calendar_id)
+    except Exception:
+        if calendar_id != settings.google_calendar_id:
+            logger.warning(f"Calendar API failed for {calendar_id}, falling back to default")
+            raw = await asyncio.to_thread(_update, settings.google_calendar_id)
+        else:
+            raise
 
     if creds.token:
         await save_google_credentials(db, creds)
@@ -276,14 +314,23 @@ async def delete_event(db: AsyncSession, event_id: str) -> dict:
     if not creds:
         return {"error": "Google Calendar not connected. Visit /api/auth/google to connect."}
 
-    def _delete():
+    calendar_id = await _resolve_calendar_id(db)
+
+    def _delete(cal_id: str):
         service = _build_service(creds)
         service.events().delete(
-            calendarId=settings.google_calendar_id,
+            calendarId=cal_id,
             eventId=event_id,
         ).execute()
 
-    await asyncio.to_thread(_delete)
+    try:
+        await asyncio.to_thread(_delete, calendar_id)
+    except Exception:
+        if calendar_id != settings.google_calendar_id:
+            logger.warning(f"Calendar API failed for {calendar_id}, falling back to default")
+            await asyncio.to_thread(_delete, settings.google_calendar_id)
+        else:
+            raise
 
     if creds.token:
         await save_google_credentials(db, creds)
@@ -302,23 +349,31 @@ async def find_free_time(
     if not creds:
         return []
 
-    def _query_freebusy():
+    calendar_id = await _resolve_calendar_id(db)
+
+    def _query_freebusy(cal_id: str):
         service = _build_service(creds)
         body = {
             "timeMin": time_min,
             "timeMax": time_max,
             "timeZone": "America/Los_Angeles",
-            "items": [{"id": settings.google_calendar_id}],
+            "items": [{"id": cal_id}],
         }
-        return service.freebusy().query(body=body).execute()
+        result = service.freebusy().query(body=body).execute()
+        busy = result.get("calendars", {}).get(cal_id, {}).get("busy", [])
+        return busy
 
-    result = await asyncio.to_thread(_query_freebusy)
+    try:
+        busy = await asyncio.to_thread(_query_freebusy, calendar_id)
+    except Exception:
+        if calendar_id != settings.google_calendar_id:
+            logger.warning(f"Calendar API failed for {calendar_id}, falling back to default")
+            busy = await asyncio.to_thread(_query_freebusy, settings.google_calendar_id)
+        else:
+            raise
 
     if creds.token:
         await save_google_credentials(db, creds)
-
-    # Parse busy periods
-    busy = result.get("calendars", {}).get(settings.google_calendar_id, {}).get("busy", [])
 
     # Convert to datetime objects
     range_start = parse_dt(time_min)

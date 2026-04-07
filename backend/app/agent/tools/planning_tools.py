@@ -1,10 +1,10 @@
 """Daily planning tool definitions for the agent.
 
-Provides the execute_daily_plan tool, which atomically creates tasks
-and calendar events for an entire daily plan in one confirmation step.
+Provides the execute_daily_plan tool, which atomically creates child
+todos with calendar events for an entire daily plan in one confirmation step.
 
 Registered tools:
-  - execute_daily_plan  (HIGH_STAKES) -- create tasks + calendar events for a full daily plan
+  - execute_daily_plan  (HIGH_STAKES) -- create child todos + calendar events for a full daily plan
 """
 
 from typing import Any
@@ -21,7 +21,12 @@ async def handle_execute_daily_plan(db: AsyncSession, **kwargs: Any) -> dict:
 
 register_tool(ToolDefinition(
     name="execute_daily_plan",
-    description="Execute a daily plan: create tasks and calendar events for multiple todos (requires confirmation).",
+    description="Execute a daily plan: create scheduled child todos with calendar events for multiple parent todos (requires confirmation).",
+    embedding_text=(
+        "planning: execute_daily_plan — execute, run, activate a daily plan, "
+        "batch schedule todos and create calendar events for the day. Plan my day. "
+        "Schedule all my todos for today. Create a daily schedule."
+    ),
     input_schema={
         "type": "object",
         "properties": {

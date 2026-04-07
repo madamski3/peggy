@@ -73,6 +73,10 @@ async def handle_bulk_complete_list_items(db: AsyncSession, **kwargs: Any) -> di
 register_tool(ToolDefinition(
     name="get_lists",
     description="Get lists, optionally filtered by type or status.",
+    embedding_text=(
+        "list: get_lists — show, view my lists, grocery list, packing list, "
+        "shopping list. What lists do I have? Show my grocery list."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -93,6 +97,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="get_list_items",
     description="Get items from a specific list.",
+    embedding_text=(
+        "list: get_list_items — show items on a list, what's on my grocery list, "
+        "view list contents. What do I need to buy?"
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -114,6 +122,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="create_list",
     description="Create a new list.",
+    embedding_text=(
+        "list: create_list — create, start a new list, grocery list, packing list, "
+        "shopping list. Make me a grocery list. Start a packing list for my trip."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -131,6 +143,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="add_list_item",
     description="Add an item to a list.",
+    embedding_text=(
+        "list: add_list_item — add item to a list, put milk on the grocery list, "
+        "add something to my shopping list. Don't forget to pack sunscreen."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -148,6 +164,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="complete_list_item",
     description="Mark a list item as done.",
+    embedding_text=(
+        "list: complete_list_item — check off, mark done, complete an item on a list. "
+        "I got the milk. Cross that off my list."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -163,6 +183,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="bulk_complete_list_items",
     description="Mark all pending items on a list as completed.",
+    embedding_text=(
+        "list: bulk_complete_list_items — complete all items, clear the list, "
+        "mark everything as done. I got everything on my grocery list."
+    ),
     input_schema={
         "type": "object",
         "properties": {

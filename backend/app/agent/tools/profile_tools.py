@@ -104,6 +104,11 @@ register_tool(ToolDefinition(
         "For people, use category='people' with key='person.<name>' and value as a "
         "JSON object with name, relationship_type, description, key_dates, etc."
     ),
+    embedding_text=(
+        "profile: add_profile_fact — remember, save, store personal information, "
+        "preferences, people, contacts, facts about me. Remember that I prefer X. "
+        "Save this person's info. Note that my anniversary is on June 5th."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -124,6 +129,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="update_profile_fact",
     description="Update a profile fact's value, creating a new version.",
+    embedding_text=(
+        "profile: update_profile_fact — update, change, correct personal information "
+        "or a stored fact. Actually my birthday is in March. Update my job title."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -171,6 +180,12 @@ register_tool(ToolDefinition(
         "Search the user's personal knowledge base. This is the single source for ALL "
         "personal information — people/contacts/family, preferences, schedule, identity, "
         "household, career, etc. Returns the most relevant facts ranked by similarity."
+    ),
+    embedding_text=(
+        "profile: search_profile — look up, find, recall personal information, "
+        "people, contacts, family, preferences, household, career, identity. "
+        "What's my wife's name? Do I have any dietary restrictions? "
+        "Who is John? What do you know about me?"
     ),
     input_schema={
         "type": "object",

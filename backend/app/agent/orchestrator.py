@@ -29,14 +29,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.client import call_llm
 from app.agent.context import assemble_context, build_conversation_messages, detect_intents
+from app.agent.planner import PlannerResult, run_planner
 from app.agent.tools.registry import (
     ActionTier,
     TOOL_REGISTRY,
     classify_action,
-    get_tool_schemas_for_intents,
+    get_tool_schemas_for_names,
 )
+from app.agent.tool_selector import select_tools
 from app.config import settings
-from app.prompts.loader import render_prompt
+from app.prompts.composer import compose_prompt
 from app.schemas.agent import (
     ActionTaken,
     ChatResponse,
@@ -86,17 +88,32 @@ async def run_agent_loop(
 
     # ── Step A: Context Assembly ──
     context = await assemble_context(db, user_message, session_id)
-    intents = context.get("intents", set())
-    system_prompt = render_prompt(settings.system_prompt_version, context)
 
-    # ── Step B: Build messages ──
-    # Load session history for conversation continuity
+    # ── Step A.1: Load conversation history (planner needs it) ──
     conversation_history = None
     if session_id:
         history = await get_session_history(db, session_id, limit=3)
         if history:
             conversation_history = history
 
+    # ── Step A.2: Run planner + tool selector in parallel ──
+    plan = await run_planner(user_message, conversation_history)
+    if plan.raw_response:
+        await log_llm_call(db, session_id, 0, plan.raw_response)
+    logger.info(f"Planner: effort={plan.result.effort}, components={plan.result.components}")
+
+    selected_tool_names = await select_tools(user_message, conversation_history)
+    logger.info(f"Tool selector: {sorted(selected_tool_names)}")
+
+    # ── Step A.3: Compose system prompt from relevant components ──
+    context["strategy"] = plan.result.strategy
+    system_prompt = compose_prompt(
+        context=context,
+        planner_components=plan.result.components,
+        channel=channel,
+    )
+
+    # ── Step B: Build messages ──
     messages = build_conversation_messages(user_message, conversation_history)
     turn_start = len(messages)  # index where this turn's messages begin
 
@@ -105,7 +122,7 @@ async def run_agent_loop(
     # the tool and append the result to messages -> repeat. If Claude returns
     # end_turn (i.e. it's done calling tools), extract the final text and break.
     actions_taken: list[ActionTaken] = []
-    tool_schemas = get_tool_schemas_for_intents(intents)
+    tool_schemas = get_tool_schemas_for_names(selected_tool_names)
     final_text = ""
 
     for round_num in range(settings.agent_max_tool_rounds):
@@ -115,6 +132,7 @@ async def run_agent_loop(
             messages=messages,
             system=system_prompt,
             tools=tool_schemas,
+            effort=plan.result.effort,
         )
 
         await log_llm_call(db, session_id, round_num + 1, response)
@@ -158,6 +176,7 @@ async def run_agent_loop(
                         # Log the confirmation interaction before returning
                         await _log_and_commit(
                             db, session_id, user_message, chat_response, actions_taken, channel,
+                            planner_result=plan.result,
                         )
                         return chat_response
 
@@ -216,6 +235,7 @@ async def run_agent_loop(
     await _log_and_commit(
         db, session_id, user_message, chat_response, actions_taken, channel,
         message_chain=turn_messages,
+        planner_result=plan.result,
     )
     return chat_response
 
@@ -298,9 +318,13 @@ async def _log_and_commit(
     actions_taken: list[ActionTaken],
     channel: str = "chat",
     message_chain: list[dict[str, Any]] | None = None,
+    planner_result: PlannerResult | None = None,
 ) -> None:
     """Log the interaction and commit the transaction."""
-    detected_intents = ",".join(sorted(detect_intents(user_message))) or None
+    if planner_result:
+        parsed_intent = planner_result.model_dump_json()
+    else:
+        parsed_intent = ",".join(sorted(detect_intents(user_message))) or None
 
     try:
         interaction = await log_interaction(
@@ -308,7 +332,7 @@ async def _log_and_commit(
             session_id=session_id,
             channel=channel,
             user_message=user_message,
-            parsed_intent=detected_intents,
+            parsed_intent=parsed_intent,
             assistant_response=chat_response.model_dump(mode="json"),
             actions_taken=[a.model_dump() for a in actions_taken],
             message_chain=message_chain,
@@ -411,13 +435,13 @@ def _try_parse_response_json(text: str) -> dict | None:
 
 def _describe_action(tool_name: str, tool_args: dict) -> str:
     """Generate a human-readable description of a pending action."""
-    if tool_name == "create_tasks_batch":
-        tasks = tool_args.get("tasks", [])
-        return f"Create {len(tasks)} scheduled tasks for this todo."
+    if tool_name == "create_sub_todos":
+        children = tool_args.get("children", [])
+        return f"Create {len(children)} scheduled items for this todo."
     if tool_name == "execute_daily_plan":
         items = tool_args.get("plan_items", [])
-        total_tasks = sum(len(i.get("tasks", [])) for i in items)
-        return f"Create {total_tasks} tasks across {len(items)} todos and add them to your calendar."
+        total = sum(len(i.get("tasks", [])) for i in items)
+        return f"Schedule {total} items across {len(items)} todos and add them to your calendar."
     if tool_name == "delete_calendar_event":
         return "Delete this event from your Google Calendar (irreversible)."
     return f"Execute {tool_name} with the provided arguments."
@@ -425,13 +449,13 @@ def _describe_action(tool_name: str, tool_args: dict) -> str:
 
 def _build_confirmation_summary(tool_name: str, tool_args: dict) -> str:
     """Build a spoken summary for a confirmation request."""
-    if tool_name == "create_tasks_batch":
-        tasks = tool_args.get("tasks", [])
-        titles = [t.get("title", "untitled") for t in tasks[:3]]
+    if tool_name == "create_sub_todos":
+        children = tool_args.get("children", [])
+        titles = [c.get("title", "untitled") for c in children[:3]]
         preview = ", ".join(titles)
-        if len(tasks) > 3:
-            preview += f", and {len(tasks) - 3} more"
-        return f"I'd like to create {len(tasks)} tasks: {preview}. Should I go ahead?"
+        if len(children) > 3:
+            preview += f", and {len(children) - 3} more"
+        return f"I'd like to create {len(children)} items: {preview}. Should I go ahead?"
     if tool_name == "execute_daily_plan":
         items = tool_args.get("plan_items", [])
         lines = []
@@ -457,16 +481,12 @@ def _summarize_result(tool_name: str, result: dict) -> str:
         return f"Created todo: {result.get('title', 'untitled')}"
     if tool_name == "complete_todo":
         return f"Completed todo: {result.get('title', 'untitled')}"
-    if tool_name == "create_todo_with_task":
-        return f"Created todo with task: {result.get('title', 'untitled')}"
-    if tool_name == "create_task":
-        return f"Created task: {result.get('title', 'untitled')}"
-    if tool_name == "complete_task":
-        return f"Completed task: {result.get('title', 'untitled')}"
-    if tool_name == "defer_task":
-        return f"Deferred task: {result.get('title', 'untitled')}"
-    if tool_name == "cancel_task":
-        return f"Cancelled task: {result.get('title', 'untitled')}"
+    if tool_name == "cancel_todo":
+        return f"Cancelled todo: {result.get('title', 'untitled')}"
+    if tool_name == "reschedule_todo":
+        return f"Rescheduled todo: {result.get('title', 'untitled')}"
+    if tool_name == "create_sub_todos":
+        return f"Created {result.get('count', 0)} sub-items"
     if tool_name == "set_reminder":
         return f"Reminder set: {result.get('title', 'untitled')} at {result.get('remind_at', '?')}"
     if tool_name == "create_list":
@@ -490,6 +510,6 @@ def _summarize_result(tool_name: str, result: dict) -> str:
     if tool_name == "find_free_time":
         return f"Found {result.get('count', 0)} free time slots"
     if tool_name == "execute_daily_plan":
-        return f"Created {result.get('tasks_created', 0)} tasks and {result.get('events_created', 0)} calendar events"
+        return f"Scheduled {result.get('items_created', 0)} items and created {result.get('events_created', 0)} calendar events"
 
     return f"Executed {tool_name}"

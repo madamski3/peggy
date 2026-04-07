@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import async_session_maker
-from app.routers import auth, chat, health, people, profile, tasks, todos
+from app.routers import auth, chat, health, people, planning, profile, todos
 from app.services.notifications import process_due_notifications
 from app.services.scheduled_jobs import (
     deadline_warning_scan,
@@ -107,4 +107,4 @@ app.include_router(people.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(todos.router, prefix="/api")
-app.include_router(tasks.router, prefix="/api")
+app.include_router(planning.router, prefix="/api")

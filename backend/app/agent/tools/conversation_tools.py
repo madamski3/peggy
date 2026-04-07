@@ -39,6 +39,11 @@ async def handle_get_recent_conversations(db: AsyncSession, **kwargs: Any) -> di
 register_tool(ToolDefinition(
     name="search_conversations",
     description="Search past conversations by text content.",
+    embedding_text=(
+        "conversation: search_conversations — search, find past conversations, "
+        "what did we talk about, previous chats. Did I ask about X before? "
+        "What did you tell me about Y?"
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -61,6 +66,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="get_recent_conversations",
     description="Get the most recent conversation interactions.",
+    embedding_text=(
+        "conversation: get_recent_conversations — recent chats, conversation history, "
+        "what did we discuss recently. Show my recent conversations."
+    ),
     input_schema={
         "type": "object",
         "properties": {

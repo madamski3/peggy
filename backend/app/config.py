@@ -9,7 +9,6 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://assistant:assistant@localhost/assistant"
-    system_prompt_version: str = "v1"
 
     # Anthropic API
     anthropic_api_key: str = ""
@@ -24,6 +23,9 @@ class Settings(BaseSettings):
 
     # OpenAI (embeddings)
     openai_api_key: str = ""
+
+    # Frontend
+    frontend_base_url: str = "http://peggy.michaeladamski.com:3002"
 
     # ntfy push notifications
     ntfy_base_url: str = "http://ntfy:80"

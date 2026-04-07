@@ -1,7 +1,6 @@
 """SQLAlchemy ORM models for all database tables.
 
-This is the single source of truth for the database schema. All 12 tables
-are defined here. The main groups:
+This is the single source of truth for the database schema. The main groups:
 
   Knowledge base:
     - ProfileFact     -- versioned user knowledge (with superseded_by chain)
@@ -9,15 +8,15 @@ are defined here. The main groups:
     - Person          -- contacts directory
 
   Productivity:
-    - Todo            -- backlog items (has many Tasks, supports hierarchy)
-    - Task            -- scheduled work blocks (belongs to a Todo)
+    - Todo            -- backlog/scheduled items (supports hierarchy via parent_todo_id,
+                         optional scheduling with calendar sync)
     - List            -- named lists (grocery, packing, custom)
     - ListItem        -- items within a list
 
   Infrastructure:
     - Interaction     -- conversation log (user message + agent response)
     - Credential      -- OAuth tokens (currently Google Calendar)
-    - ScheduledNotification -- (placeholder) push notification queue
+    - ScheduledNotification -- push notification queue (linked to todos)
 
   Financial (placeholder, not yet implemented):
     - FinancialAccount, Transaction, NetWorthSnapshot
@@ -29,6 +28,7 @@ from datetime import datetime
 from sqlalchemy import (
     ARRAY,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -132,6 +132,17 @@ class Todo(Base):
         UUID(as_uuid=True), ForeignKey("todos.id")
     )
 
+    # Scheduling (optional — when set, todo becomes "scheduled" with a calendar event)
+    scheduled_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scheduled_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    actual_duration_minutes: Mapped[int | None] = mapped_column(Integer)
+    calendar_event_id: Mapped[str | None] = mapped_column(Text)
+
+    # Completion
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deferred_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
+    completion_notes: Mapped[str | None] = mapped_column(Text)
+
     # Context
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
     dependencies: Mapped[list[uuid.UUID] | None] = mapped_column(ARRAY(UUID(as_uuid=True)))
@@ -146,53 +157,10 @@ class Todo(Base):
     )
 
     # Relationships
-    tasks: Mapped[list["Task"]] = relationship(back_populates="todo")
     children: Mapped[list["Todo"]] = relationship(back_populates="parent")
     parent: Mapped["Todo | None"] = relationship(
         back_populates="children", remote_side="Todo.id"
     )
-
-
-class Task(Base):
-    __tablename__ = "tasks"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
-    )
-    todo_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("todos.id"), nullable=False
-    )
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str | None] = mapped_column(Text)
-
-    # Scheduling
-    scheduled_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    scheduled_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    estimated_duration_minutes: Mapped[int | None] = mapped_column(Integer)
-    actual_duration_minutes: Mapped[int | None] = mapped_column(Integer)
-    calendar_event_id: Mapped[str | None] = mapped_column(Text)
-
-    # Status
-    status: Mapped[str] = mapped_column(Text, server_default=text("'scheduled'"))
-
-    # Completion
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    deferred_count: Mapped[int] = mapped_column(Integer, server_default=text("0"))
-    completion_notes: Mapped[str | None] = mapped_column(Text)
-
-    # Ordering
-    position: Mapped[int | None] = mapped_column(Integer)
-
-    created_by: Mapped[str] = mapped_column(Text, server_default=text("'assistant'"))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()")
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text("now()")
-    )
-
-    # Relationships
-    todo: Mapped["Todo"] = relationship(back_populates="tasks")
 
 
 class List(Base):
@@ -361,14 +329,30 @@ class Credential(Base):
     )
 
 
+class DailyPlan(Base):
+    __tablename__ = "daily_plans"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    plan_date: Mapped[datetime] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(Text, server_default=text("'proposed'"))
+    proposal: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    spoken_summary: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ScheduledNotification(Base):
     __tablename__ = "scheduled_notifications"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    task_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tasks.id")
+    todo_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("todos.id")
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)

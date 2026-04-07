@@ -76,6 +76,12 @@ async def handle_find_free_time(db: AsyncSession, **kwargs: Any) -> dict:
 register_tool(ToolDefinition(
     name="get_calendar_events",
     description="List Google Calendar events within a time range.",
+    embedding_text=(
+        "calendar: get_calendar_events — list, view, check, show calendar events, "
+        "meetings, appointments for today, tomorrow, this week, a date range. "
+        "What's on my calendar? Do I have any meetings? Am I free Thursday? "
+        "What does my schedule look like?"
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -94,6 +100,11 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="create_calendar_event",
     description="Create a Google Calendar event, tagged as assistant-created.",
+    embedding_text=(
+        "calendar: create_calendar_event — create, add, schedule, book a calendar event, "
+        "meeting, appointment, block time. Put this on my calendar. "
+        "Schedule a meeting with John at 3pm. Block off Friday afternoon."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -115,6 +126,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="update_calendar_event",
     description="Update fields on an existing Google Calendar event.",
+    embedding_text=(
+        "calendar: update_calendar_event — change, move, reschedule, rename, edit "
+        "a calendar event. Move my 3pm meeting to 4pm. Change the location."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -136,6 +151,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="delete_calendar_event",
     description="Delete a Google Calendar event (irreversible).",
+    embedding_text=(
+        "calendar: delete_calendar_event — delete, remove, cancel a calendar event "
+        "or meeting. Remove that appointment. Cancel the meeting."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -152,6 +171,11 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="find_free_time",
     description="Find free time slots between calendar events.",
+    embedding_text=(
+        "calendar: find_free_time — find free time, open slots, availability, gaps "
+        "in my schedule. When am I free? Find a 2-hour block this week. "
+        "What time works for a meeting?"
+    ),
     input_schema={
         "type": "object",
         "properties": {

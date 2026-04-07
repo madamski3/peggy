@@ -5,7 +5,7 @@ import ProfilePage from "./components/profile/ProfilePage";
 import PeoplePage from "./components/people/PeoplePage";
 import PersonDetailForm from "./components/people/PersonDetailForm";
 import TodosPage from "./components/todos/TodosPage";
-import TasksPage from "./components/tasks/TasksPage";
+import PlanningPage from "./components/planning/PlanningPage";
 
 export default function App() {
   return (
@@ -23,7 +23,7 @@ export default function App() {
                 <Route path="/people/new" element={<PersonDetailForm />} />
                 <Route path="/people/:id" element={<PersonDetailForm />} />
                 <Route path="/todos" element={<TodosPage />} />
-                <Route path="/tasks" element={<TasksPage />} />
+                <Route path="/planning" element={<PlanningPage />} />
               </Routes>
             </main>
           }

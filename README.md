@@ -103,7 +103,7 @@ app/
   database.py                # SQLAlchemy async engine, session factory, session maker for jobs
 
   models/
-    tables.py                # All SQLAlchemy ORM models (15 tables)
+    tables.py                # All SQLAlchemy ORM models (14 tables)
 
   routers/                   # HTTP endpoints
     chat.py                  #   POST /api/chat/ -- the agent endpoint
@@ -111,7 +111,6 @@ app/
     people.py                #   CRUD /api/people/ -- contacts directory
     auth.py                  #   Google OAuth2 flow (Calendar + Gmail scopes)
     todos.py                 #   GET /api/todos/ -- todo list for UI
-    tasks.py                 #   GET /api/tasks/ -- task list for UI
     planning.py              #   GET/POST /api/planning/ -- daily plans for UI
     health.py                #   GET /api/health
 
@@ -122,21 +121,19 @@ app/
 
     tools/                   # Tool definitions (one file per domain, each tagged with a category)
       registry.py            #   Global tool registry, action tier classification, intent-based filtering
-      todo_tools.py          #   Todo CRUD tools (including create_todo_with_task)
-      task_tools.py          #   Task scheduling tools
+      todo_tools.py          #   Todo CRUD + scheduling tools (create, complete, reschedule, cancel, batch)
       list_tools.py          #   List/item management tools
       calendar_tools.py      #   Google Calendar tools
       gmail_tools.py         #   Gmail read-only tools (list, detail, search)
       planning_tools.py      #   execute_daily_plan (HIGH_STAKES)
-      reminder_tools.py      #   set_reminder (LOW_STAKES, creates todo + task + notification)
+      reminder_tools.py      #   set_reminder (LOW_STAKES, creates todo + notification)
       profile_tools.py       #   Profile fact + people lookup tools (vector search via search_profile)
       conversation_tools.py  #   Conversation search tools
 
   services/                  # Business logic layer (called by tools AND routers)
-    todos.py                 #   Todo CRUD, completion cascading, create_todo_with_task
-    tasks.py                 #   Task CRUD, batch creation, auto-complete parent todo
+    todos.py                 #   Todo CRUD, scheduling, calendar sync, parent status cascading
     lists.py                 #   List + ListItem CRUD
-    planning.py              #   Daily plan execution (atomic task + calendar event creation)
+    planning.py              #   Daily plan execution (creates child todos with calendar events)
     google_calendar.py       #   Google Calendar API wrapper (async, OAuth token management)
     gmail.py                 #   Gmail API wrapper (read-only, shares OAuth with Calendar)
     notifications.py         #   Notification scheduling, ntfy delivery, APScheduler poll loop
@@ -168,7 +165,7 @@ app/
 ```
 src/
   main.tsx                   # React entry point (BrowserRouter)
-  App.tsx                    # Top-level routes: /, /profile, /people, /todos, /tasks, /planning
+  App.tsx                    # Top-level routes: /, /profile, /people, /todos, /planning
 
   hooks/
     useChat.ts               # Chat state management, message sending, confirmation flow
@@ -181,12 +178,12 @@ src/
     chat.ts                  # ChatMessage, ChatRequest, ChatResponse, etc.
     profile.ts               # ProfileData, Pet, Vehicle, Role
     people.ts                # Person
-    todos.ts                 # Todo, Task interfaces
+    todos.ts                 # Todo, ReviewTodo interfaces
     payloads.ts              # DailyPlan, DailySchedule structured payload types
 
   components/
     layout/
-      NavBar.tsx             # Top nav: Chat | Profile | People | Todos | Tasks | Planning
+      NavBar.tsx             # Top nav: Chat | Profile | People | Todos | Planning
 
     chat/
       ChatPage.tsx           # Page shell: MessageList + InputBar
@@ -215,10 +212,7 @@ src/
       PersonDetailForm.tsx   # Create/edit/delete a person
 
     todos/
-      TodosPage.tsx          # Table view with status/priority filters
-
-    tasks/
-      TasksPage.tsx          # Table view with status filters and schedule times
+      TodosPage.tsx          # Table view with status/priority/schedule filters
 
     planning/
       PlanningPage.tsx       # Daily plan view and management
@@ -256,15 +250,14 @@ frontend/nginx.conf          # /api/* -> backend:8000, /* -> SPA fallback
 
 ## Data Model
 
-The 15 tables in `models/tables.py`:
+The 14 tables in `models/tables.py`:
 
 | Table | Purpose |
 |-------|---------|
 | `profile_facts` | User knowledge store (versioned, with supersession chain + vector embeddings) |
 | `seed_field_versions` | Tracks form field edit history for diff detection |
 | `people` | Contacts directory (with key_dates for birthday/anniversary alerts + vector embeddings) |
-| `todos` | Backlog items (title, priority, deadline, tags, hierarchy) |
-| `tasks` | Scheduled work blocks linked to todos |
+| `todos` | Unified productivity items (backlog or scheduled, with optional calendar sync and parent/child hierarchy) |
 | `daily_plans` | Saved daily plans from the planning page |
 | `lists` | Named lists (grocery, packing, custom) |
 | `list_items` | Items within lists |

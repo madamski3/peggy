@@ -25,14 +25,14 @@ logger = logging.getLogger(__name__)
 
 async def schedule_notification(
     db: AsyncSession,
-    task_id: str,
+    todo_id: str,
     title: str,
     body: str,
     send_at: datetime,
 ) -> dict:
-    """Create a scheduled notification linked to a task."""
+    """Create a scheduled notification linked to a todo."""
     notification = ScheduledNotification(
-        task_id=task_id,
+        todo_id=todo_id,
         title=title,
         body=body,
         send_at=send_at,
@@ -63,18 +63,23 @@ async def mark_sent(db: AsyncSession, notification_id) -> None:
     )
 
 
-async def send_ntfy(title: str, body: str) -> bool:
+async def send_ntfy(
+    title: str, body: str, click_url: str | None = None, priority: str = "high"
+) -> bool:
     """Send a push notification via ntfy. Returns True on success."""
     url = f"{settings.ntfy_base_url}/{settings.ntfy_topic}"
     try:
+        headers = {
+            "Title": title,
+            "Priority": priority,
+        }
+        if click_url:
+            headers["Click"] = click_url
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 url,
                 content=body,
-                headers={
-                    "Title": title,
-                    "Priority": "high",
-                },
+                headers=headers,
                 timeout=10.0,
             )
             resp.raise_for_status()

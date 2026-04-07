@@ -25,6 +25,7 @@ from app.services.ingestion import ingest_field_changes
 # Which field_keys belong to each section
 SECTION_FIELDS: dict[str, list[str]] = {
     "identity": ["name", "date_of_birth", "location", "timezone", "living_situation"],
+    "contact": ["contacts"],
     "household": ["partner_name", "pets", "vehicles"],
     "preferences": ["dietary_likes", "dietary_dislikes", "communication_style"],
     "career": ["roles", "professional_skills"],
@@ -75,6 +76,48 @@ async def save_profile(
 ) -> list:
     """Save profile fields, triggering the ingestion pipeline."""
     return await ingest_field_changes(db, "profile", None, fields)
+
+
+async def get_primary_email(db: AsyncSession) -> str | None:
+    """Return the primary email address from profile contacts, or None.
+
+    Reads from SeedFieldVersion (the raw form data) to get the contacts
+    array, then finds the first entry with type="email" and primary=True.
+    """
+    result = await db.execute(
+        select(SeedFieldVersion)
+        .where(
+            and_(
+                SeedFieldVersion.entity_type == "profile",
+                SeedFieldVersion.entity_id.is_(None),
+                SeedFieldVersion.field_key == "contacts",
+            )
+        )
+        .order_by(SeedFieldVersion.edited_at.desc())
+        .limit(1)
+    )
+    version = result.scalar_one_or_none()
+    if version is None:
+        return None
+
+    try:
+        contacts = json.loads(version.value)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+    if not isinstance(contacts, list):
+        return None
+
+    for contact in contacts:
+        if (
+            isinstance(contact, dict)
+            and contact.get("type") == "email"
+            and contact.get("primary") is True
+            and contact.get("value")
+        ):
+            return contact["value"]
+
+    return None
 
 
 async def get_active_facts(

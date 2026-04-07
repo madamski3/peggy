@@ -35,6 +35,7 @@ class ProfileSectionData(BaseModel):
 
 class ProfileResponse(BaseModel):
     identity: ProfileSectionData
+    contact: ProfileSectionData
     household: ProfileSectionData
     preferences: ProfileSectionData
     career: ProfileSectionData

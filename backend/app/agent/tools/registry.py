@@ -14,7 +14,7 @@ The orchestrator uses this registry to:
 ActionTier is the safety classification:
   - READ_ONLY: queries data, no side effects (e.g. get_todos, get_calendar_events)
   - LOW_STAKES: creates/modifies data but is easily reversible (e.g. create_todo)
-  - HIGH_STAKES: batch operations or destructive actions (e.g. create_tasks_batch,
+  - HIGH_STAKES: batch operations or destructive actions (e.g. create_sub_todos,
     delete_calendar_event) -- the orchestrator pauses and asks the user to confirm
 """
 
@@ -41,6 +41,7 @@ class ToolDefinition:
     tier: ActionTier
     handler: Callable[..., Coroutine[Any, Any, Any]]
     category: str = "core"
+    embedding_text: str = ""  # rich text for vector search; auto-generated if empty
 
 
 # Global tool registry — populated by tool module imports
@@ -66,15 +67,51 @@ def get_all_tool_schemas() -> list[dict[str, Any]]:
 
 # Maps detected intents to the tool categories they unlock.
 _INTENT_TOOL_CATEGORIES: dict[str, set[str]] = {
-    "planning": {"planning", "calendar", "task", "todo"},
+    "planning": {"planning", "calendar", "todo"},
     "calendar": {"calendar"},
-    "todo": {"todo", "task"},
+    "todo": {"todo"},
     "list": {"list"},
     "email": {"email"},
     "profile": {"profile"},
     "financial": {"financial"},
     "conversation": {"conversation"},
 }
+
+# Compact descriptions of each tool category for the planner LLM.
+CATEGORY_DESCRIPTIONS: dict[str, str] = {
+    "todo": (
+        "Manage todos: create, update, complete, schedule, reschedule, and query. "
+        "Todos can be backlog items or scheduled calendar blocks with automatic "
+        "calendar sync. Supports hierarchy (parent/child) for decomposition."
+    ),
+    "calendar": (
+        "Google Calendar: list events, create/update/delete events, find free time slots "
+        "in a date range."
+    ),
+    "planning": (
+        "Daily planning: batch-schedule todos with calendar events for an entire "
+        "day plan in one atomic operation."
+    ),
+    "list": (
+        "Named lists (grocery, packing, custom): create lists, add/complete items, "
+        "bulk operations."
+    ),
+    "email": "Gmail: read recent emails, get email details, search inbox. Read-only.",
+    "profile": (
+        "Personal knowledge base: semantic search, add, and update facts about the user "
+        "(preferences, people/contacts, schedule, career, household, etc.)."
+    ),
+    "conversation": "Search past conversations and retrieve recent interaction history.",
+}
+
+
+def get_capability_manifest() -> str:
+    """Return a formatted capability manifest for the planner LLM."""
+    lines = []
+    for category, description in CATEGORY_DESCRIPTIONS.items():
+        lines.append(f"- {category}: {description}")
+    return "\n".join(lines)
+
 
 # Lightweight read-only tools sent when no intents are detected.
 # Covers the most common domains so the model can answer ambiguous queries
@@ -119,6 +156,54 @@ def get_tool_schemas_for_intents(intents: set[str]) -> list[dict[str, Any]]:
         }
         for tool in TOOL_REGISTRY.values()
         if tool.category in categories
+    ]
+
+
+def get_tool_schemas_for_categories(categories: set[str]) -> list[dict[str, Any]]:
+    """Return tool schemas filtered by tool category names directly.
+
+    Unlike get_tool_schemas_for_intents (which maps intent names to categories
+    first), this accepts category names as-is. Used by the planner, which
+    outputs category names directly.
+    """
+    if not categories:
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": tool.input_schema,
+            }
+            for tool in TOOL_REGISTRY.values()
+            if tool.name in _GENERAL_TOOLS
+        ]
+
+    return [
+        {
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+        }
+        for tool in TOOL_REGISTRY.values()
+        if tool.category in categories
+    ]
+
+
+def get_tool_schemas_for_names(tool_names: set[str]) -> list[dict[str, Any]]:
+    """Return tool schemas for a specific set of tool names.
+
+    Falls back to _GENERAL_TOOLS when the set is empty.
+    """
+    if not tool_names:
+        tool_names = _GENERAL_TOOLS
+
+    return [
+        {
+            "name": tool.name,
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+        }
+        for name in tool_names
+        if (tool := TOOL_REGISTRY.get(name)) is not None
     ]
 
 

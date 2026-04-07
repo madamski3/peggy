@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../../utils/api";
 import type { ProfileData } from "../../types/profile";
 import IdentitySection from "./IdentitySection";
+import ContactSection from "./ContactSection";
 import HouseholdSection from "./HouseholdSection";
 import PreferencesSection from "./PreferencesSection";
 import CareerSection from "./CareerSection";
@@ -23,6 +24,7 @@ import ScheduleSection from "./ScheduleSection";
 
 const EMPTY_PROFILE: ProfileData = {
   identity: { fields: {} },
+  contact: { fields: {} },
   household: { fields: {} },
   preferences: { fields: {} },
   career: { fields: {} },
@@ -118,6 +120,10 @@ export default function ProfilePage() {
       <IdentitySection
         fields={profile.identity.fields}
         onChange={(f) => updateSection("identity", f)}
+      />
+      <ContactSection
+        fields={profile.contact.fields}
+        onChange={(f) => updateSection("contact", f)}
       />
       <HouseholdSection
         fields={profile.household.fields}

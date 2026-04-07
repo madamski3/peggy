@@ -22,6 +22,16 @@ from app.services.google_calendar import get_google_credentials, save_google_cre
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_USER_ID = "me"
+
+
+async def _resolve_user_id(db: AsyncSession) -> str:
+    """Return the primary email if configured, otherwise 'me'."""
+    from app.services.profile import get_primary_email
+
+    email = await get_primary_email(db)
+    return email or _DEFAULT_USER_ID
+
 
 def _build_service(creds: Credentials):
     """Build a Gmail API service object (synchronous)."""
@@ -109,12 +119,14 @@ async def list_emails(
     if not creds:
         return {"error": "Gmail not connected. Visit /api/auth/google to connect."}
 
-    def _fetch():
+    user_id = await _resolve_user_id(db)
+
+    def _fetch(uid: str):
         service = _build_service(creds)
 
         # List message IDs
         list_kwargs = {
-            "userId": "me",
+            "userId": uid,
             "maxResults": max_results,
             "labelIds": [label],
         }
@@ -128,7 +140,7 @@ async def list_emails(
         emails = []
         for msg_ref in message_ids:
             msg = service.users().messages().get(
-                userId="me",
+                userId=uid,
                 id=msg_ref["id"],
                 format="metadata",
                 metadataHeaders=["From", "Subject", "Date"],
@@ -137,7 +149,14 @@ async def list_emails(
 
         return emails
 
-    emails = await asyncio.to_thread(_fetch)
+    try:
+        emails = await asyncio.to_thread(_fetch, user_id)
+    except Exception:
+        if user_id != _DEFAULT_USER_ID:
+            logger.warning(f"Gmail API failed for {user_id}, falling back to default")
+            emails = await asyncio.to_thread(_fetch, _DEFAULT_USER_ID)
+        else:
+            raise
 
     if creds.token:
         await save_google_credentials(db, creds)
@@ -159,15 +178,24 @@ async def get_email_detail(db: AsyncSession, message_id: str) -> dict:
     if not creds:
         return {"error": "Gmail not connected. Visit /api/auth/google to connect."}
 
-    def _fetch():
+    user_id = await _resolve_user_id(db)
+
+    def _fetch(uid: str):
         service = _build_service(creds)
         return service.users().messages().get(
-            userId="me",
+            userId=uid,
             id=message_id,
             format="full",
         ).execute()
 
-    msg = await asyncio.to_thread(_fetch)
+    try:
+        msg = await asyncio.to_thread(_fetch, user_id)
+    except Exception:
+        if user_id != _DEFAULT_USER_ID:
+            logger.warning(f"Gmail API failed for {user_id}, falling back to default")
+            msg = await asyncio.to_thread(_fetch, _DEFAULT_USER_ID)
+        else:
+            raise
 
     if creds.token:
         await save_google_credentials(db, creds)

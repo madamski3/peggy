@@ -45,6 +45,10 @@ async def handle_search_emails(db: AsyncSession, **kwargs: Any) -> dict:
 register_tool(ToolDefinition(
     name="get_recent_emails",
     description="List recent emails from the inbox.",
+    embedding_text=(
+        "email: get_recent_emails — check, show, list recent emails, inbox, messages. "
+        "Any new emails? Check my inbox. What emails did I get today?"
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -61,6 +65,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="get_email_detail",
     description="Get the full content of an email by message ID.",
+    embedding_text=(
+        "email: get_email_detail — read, open, view full email content, message body. "
+        "Show me that email. What did the email say? Read the message from John."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -77,6 +85,10 @@ register_tool(ToolDefinition(
 register_tool(ToolDefinition(
     name="search_emails",
     description="Search emails using Gmail search syntax.",
+    embedding_text=(
+        "email: search_emails — search, find emails, look up messages from someone, "
+        "about a topic. Find emails from Amazon. Search for the shipping confirmation."
+    ),
     input_schema={
         "type": "object",
         "properties": {

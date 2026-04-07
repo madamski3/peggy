@@ -9,12 +9,22 @@ export interface ProfileSectionData {
 
 export interface ProfileData {
   identity: ProfileSectionData;
+  contact: ProfileSectionData;
   household: ProfileSectionData;
   preferences: ProfileSectionData;
   career: ProfileSectionData;
   hobbies: ProfileSectionData;
   aspirations: ProfileSectionData;
   schedule: ProfileSectionData;
+}
+
+export interface Contact {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  value: string;
+  primary: boolean;
 }
 
 export interface Pet {

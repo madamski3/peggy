@@ -1,12 +1,11 @@
 """Planning service -- orchestrates daily plan execution.
 
-Combines task creation and calendar event creation into a single atomic
-operation. Called by the execute_daily_plan tool after the user confirms
-the proposed plan.
+Creates child todos (with calendar events) under parent todos for
+an entire daily plan in a single atomic operation. Called by the
+execute_daily_plan tool after the user confirms the proposed plan.
 
 Reuses:
-  - app.services.tasks.create_tasks_batch  (task creation per todo)
-  - app.services.google_calendar.create_event  (GCal event creation)
+  - app.services.todos.create_child_todos_batch  (child todo creation per parent)
 """
 
 import logging
@@ -14,8 +13,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services import tasks as task_service
-from app.services import google_calendar
+from app.services import todos as todo_service
 
 logger = logging.getLogger(__name__)
 
@@ -23,63 +21,41 @@ logger = logging.getLogger(__name__)
 async def execute_daily_plan(
     db: AsyncSession, plan_items: list[dict[str, Any]]
 ) -> dict:
-    """Execute a full daily plan: create tasks and optionally calendar events.
+    """Execute a full daily plan: create child todos with calendar events.
 
     Args:
         db: Async database session.
         plan_items: List of plan items, each with:
             - todo_id (str): UUID of the parent todo
-            - tasks (list[dict]): Tasks to create (title, scheduled_start, scheduled_end, etc.)
+            - tasks (list[dict]): Children to create (title, scheduled_start, scheduled_end, etc.)
             - create_calendar_events (bool): Whether to also create GCal events
+              (calendar events are now created automatically by _sync_calendar
+              whenever a todo has scheduled times, so this flag is informational)
 
     Returns:
-        Summary dict with tasks_created, events_created, and details.
+        Summary dict with items_created, events_created, and details.
     """
-    total_tasks = 0
-    total_events = 0
+    total_items = 0
     details: list[dict] = []
 
     for item in plan_items:
         todo_id = item["todo_id"]
-        tasks_data = item.get("tasks", [])
-        create_events = item.get("create_calendar_events", True)
+        children_data = item.get("tasks", [])
 
-        # Create tasks for this todo
-        created_tasks = await task_service.create_tasks_batch(db, todo_id, tasks_data)
-        total_tasks += len(created_tasks)
+        created = await todo_service.create_child_todos_batch(db, todo_id, children_data)
+        total_items += len(created)
 
-        item_detail: dict[str, Any] = {
+        events_created = sum(1 for c in created if c.get("calendar_event_id"))
+        details.append({
             "todo_id": todo_id,
-            "tasks_created": len(created_tasks),
-            "events_created": 0,
-        }
+            "items_created": len(created),
+            "events_created": events_created,
+        })
 
-        # Create calendar events for each task (if requested and task has times)
-        if create_events:
-            for task_data in tasks_data:
-                start = task_data.get("scheduled_start")
-                end = task_data.get("scheduled_end")
-                if start and end:
-                    try:
-                        result = await google_calendar.create_event(
-                            db,
-                            summary=task_data.get("title", "Untitled task"),
-                            start=start,
-                            end=end,
-                            description=task_data.get("description", ""),
-                        )
-                        if "error" not in result:
-                            total_events += 1
-                            item_detail["events_created"] += 1
-                        else:
-                            logger.warning(f"Failed to create calendar event: {result['error']}")
-                    except Exception as e:
-                        logger.error(f"Calendar event creation failed: {e}")
-
-        details.append(item_detail)
+    total_events = sum(d["events_created"] for d in details)
 
     return {
-        "tasks_created": total_tasks,
+        "items_created": total_items,
         "events_created": total_events,
         "details": details,
     }

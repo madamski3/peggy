@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import settings
 from app.models.tables import Person
+from app.services import daily_plans
 from app.services.notifications import send_ntfy
 from app.services.proactive import invoke_agent_proactively
 from app.services.timezone import get_user_tz
@@ -27,28 +28,45 @@ logger = logging.getLogger(__name__)
 
 
 async def morning_briefing(session_factory: async_sessionmaker) -> None:
-    """Generate and send a morning briefing via push notification.
+    """Generate a daily plan proposal and send a notification with deep link.
 
-    Invokes the full agent loop with a synthetic message so the LLM can
-    check calendar, tasks, deadlines, and emails to produce a summary.
+    Invokes the full agent loop with a planning prompt. If the agent returns
+    a structured daily_plan payload, it's saved as a draft proposal for the
+    user to review in the /planning UI. The notification links to that page.
     """
-    logger.info("Running morning briefing job")
+    logger.info("Running morning briefing / daily plan job")
 
     response = await invoke_agent_proactively(
         session_factory,
-        "Generate a morning briefing for the user. Check today's calendar, "
-        "pending tasks, upcoming deadlines, and recent emails. Summarize the "
-        "day ahead in 2-4 concise sentences suitable for a push notification.",
+        "Plan the user's day. Check today's calendar, scheduled todos, backlog "
+        "todos (especially those with approaching deadlines or target dates), "
+        "and find free time slots. Generate a daily plan proposal. Return a "
+        "structured_payload with type 'daily_plan'. Also include a brief "
+        "spoken_summary (2-3 sentences for a push notification).",
     )
 
-    if response and response.get("spoken_summary"):
-        await send_ntfy(
-            title="Good morning! Here's your day",
-            body=response["spoken_summary"],
-        )
-        logger.info("Morning briefing sent")
-    else:
-        logger.warning("Morning briefing produced no response")
+    if not response or not response.get("spoken_summary"):
+        logger.warning("Morning plan produced no response")
+        return
+
+    # Save the plan proposal if the agent returned a structured daily_plan
+    payload = response.get("structured_payload")
+    if isinstance(payload, dict) and payload.get("type") == "daily_plan":
+        async with session_factory() as db:
+            user_tz = await get_user_tz(db)
+            today = datetime.now(user_tz).date()
+            await daily_plans.save_proposal(
+                db, today, payload, response.get("spoken_summary")
+            )
+            await db.commit()
+        logger.info("Daily plan proposal saved for %s", today)
+
+    await send_ntfy(
+        title="Good morning! Here's your plan",
+        body=response["spoken_summary"],
+        click_url=f"{settings.frontend_base_url}/planning",
+    )
+    logger.info("Morning plan notification sent")
 
 
 async def deadline_warning_scan(session_factory: async_sessionmaker) -> None:
@@ -69,7 +87,7 @@ async def deadline_warning_scan(session_factory: async_sessionmaker) -> None:
         approaching = await get_todos(db, {
             "status": "backlog",
             "deadline_before": deadline_str,
-            "has_scheduled_tasks": False,
+            "is_scheduled": False,
         })
 
     if not approaching:
@@ -87,7 +105,7 @@ async def deadline_warning_scan(session_factory: async_sessionmaker) -> None:
 
     response = await invoke_agent_proactively(
         session_factory,
-        f"The following todos have approaching deadlines but no tasks "
+        f"The following todos have approaching deadlines and haven't been "
         f"scheduled yet:\n{todo_summary}\n\n"
         f"Generate a brief nudge for the user (2-3 sentences, suitable for "
         f"a push notification). Be specific about what needs attention.",

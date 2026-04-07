@@ -24,6 +24,14 @@ PROFILE_FIELD_MAPPINGS: dict[str, dict] = {
     "location": {"category": "identity", "key": "location", "type": "single"},
     "timezone": {"category": "identity", "key": "timezone", "type": "single"},
     "living_situation": {"category": "identity", "key": "living_situation", "type": "single"},
+    # Contact Details
+    "contacts": {
+        "category": "identity",
+        "key_prefix": "contact",
+        "type": "structured_list",
+        "id_field": "id",
+        "name_field": "name",
+    },
     # Household
     "partner_name": {"category": "household", "key": "partner.name", "type": "single"},
     "pets": {

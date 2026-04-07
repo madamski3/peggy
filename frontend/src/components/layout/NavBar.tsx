@@ -5,7 +5,7 @@ const links = [
   { to: "/profile", label: "Profile" },
   { to: "/people", label: "People" },
   { to: "/todos", label: "Todos" },
-  { to: "/tasks", label: "Tasks" },
+  { to: "/planning", label: "Planning" },
 ];
 
 export default function NavBar() {

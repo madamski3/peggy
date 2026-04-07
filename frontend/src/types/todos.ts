@@ -12,24 +12,19 @@ export interface Todo {
   location: string | null;
   tags: string[] | null;
   notes: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Task {
-  id: string;
-  todo_id: string;
-  title: string;
-  description: string | null;
+  parent_todo_id: string | null;
   scheduled_start: string | null;
   scheduled_end: string | null;
-  estimated_duration_minutes: number | null;
   actual_duration_minutes: number | null;
-  status: string;
+  calendar_event_id: string | null;
   completed_at: string | null;
   deferred_count: number;
   completion_notes: string | null;
   position: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ReviewTodo extends Todo {
+  parent_title: string | null;
 }
