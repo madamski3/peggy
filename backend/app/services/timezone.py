@@ -5,29 +5,24 @@ timezone-aware datetimes. All code that needs "now" or "today" in the
 user's local time should use this module instead of constructing
 datetimes directly.
 
-The user's timezone is stored as a ProfileFact (category="identity",
-key="timezone"). If not set, falls back to settings.default_timezone.
+The user's timezone is cached at startup from ProfileFacts (category="identity",
+key="timezone"). If not set, falls back to globals.DEFAULT_TIMEZONE.
 """
 
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.config import settings
+from app.globals import DEFAULT_TIMEZONE, get_cached_timezone
 
 
-async def get_user_tz(db: AsyncSession) -> ZoneInfo:
-    """Resolve the user's timezone from the database.
+async def get_user_tz(db=None) -> ZoneInfo:
+    """Resolve the user's timezone from cache.
 
-    Queries active ProfileFacts for the timezone setting. Falls back
-    to settings.default_timezone if not configured.
+    Returns the cached timezone (loaded at startup and refreshed on
+    profile save). The db parameter is kept for backward compatibility
+    but is no longer used.
     """
-    # Import here to avoid circular dependency (profile -> embeddings -> ...)
-    from app.services.profile import get_active_facts
-
-    facts = await get_active_facts(db)
-    return user_tz_from_facts(facts)
+    return get_cached_timezone()
 
 
 def user_tz_from_facts(facts: list) -> ZoneInfo:
@@ -39,7 +34,7 @@ def user_tz_from_facts(facts: list) -> ZoneInfo:
     for fact in facts:
         if fact.key == "timezone" and fact.value:
             return ZoneInfo(fact.value)
-    return ZoneInfo(settings.default_timezone)
+    return ZoneInfo(DEFAULT_TIMEZONE)
 
 
 def now_in_user_tz(tz: ZoneInfo) -> datetime:

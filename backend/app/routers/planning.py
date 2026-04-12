@@ -18,15 +18,14 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.config import settings
 from app.database import async_session_maker, get_db
+from app.globals import get_cached_timezone
 from app.models.tables import Todo
 from app.services import daily_plans as plan_service
 from app.services import planning as planning_exec
 from app.services import todos as todo_service
 from app.services.proactive import invoke_agent_proactively
 from app.services.serialization import model_to_dict
-from app.services.timezone import get_user_tz
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +97,7 @@ async def _get_review_todos(db: AsyncSession) -> tuple[list[dict], str]:
     Looks at every todo scheduled before today that isn't completed or
     cancelled, so skipping a day of planning doesn't orphan items.
     """
-    user_tz = await get_user_tz(db)
+    user_tz = get_cached_timezone()
     now_local = datetime.now(user_tz)
     today_start = datetime(
         now_local.year, now_local.month, now_local.day, tzinfo=user_tz
@@ -174,7 +173,7 @@ async def get_today(db: AsyncSession = Depends(get_db)):
     """Return review todos (past incomplete) and today's plan proposal."""
     review_todos, review_date = await _get_review_todos(db)
 
-    user_tz = await get_user_tz(db)
+    user_tz = get_cached_timezone()
     today = datetime.now(user_tz).date()
     plan = await plan_service.get_plan_for_date(db, today)
 
@@ -234,7 +233,7 @@ async def regenerate_plan(db: AsyncSession = Depends(get_db)):
     if result is None:
         raise HTTPException(status_code=502, detail="Agent did not produce a plan proposal")
 
-    user_tz = await get_user_tz(db)
+    user_tz = get_cached_timezone()
     today = datetime.now(user_tz).date()
     plan = await plan_service.save_proposal(
         db, today, result["proposal"], result.get("spoken_summary")
@@ -260,7 +259,7 @@ async def refine_plan(body: RefineRequest, db: AsyncSession = Depends(get_db)):
     if result is None:
         raise HTTPException(status_code=502, detail="Agent did not produce an updated plan")
 
-    user_tz = await get_user_tz(db)
+    user_tz = get_cached_timezone()
     today = datetime.now(user_tz).date()
     plan = await plan_service.save_proposal(
         db, today, result["proposal"], result.get("spoken_summary")

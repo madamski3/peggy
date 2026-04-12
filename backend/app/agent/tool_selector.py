@@ -15,6 +15,7 @@ import math
 from dataclasses import dataclass, field
 
 from app.agent.tools.registry import TOOL_REGISTRY, ToolDefinition, _GENERAL_TOOLS
+from app.globals import TOOL_SELECTOR_THRESHOLD, TOOL_SELECTOR_TOP_K
 from app.services.embeddings import get_embedding, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
@@ -82,8 +83,8 @@ async def initialize() -> None:
 async def select_tools(
     user_message: str,
     conversation_history: list[dict] | None,
-    top_k: int = 12,
-    threshold: float = 0.40,
+    top_k: int = TOOL_SELECTOR_TOP_K,
+    threshold: float = TOOL_SELECTOR_THRESHOLD,
 ) -> ToolSelectionResult:
     """Select relevant tools for a turn via vector similarity.
 

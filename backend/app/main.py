@@ -23,6 +23,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import async_session_maker
+from app.globals import (
+    DEADLINE_WARNING_HOUR,
+    KEY_DATE_ALERT_HOUR,
+    MORNING_BRIEFING_DEFAULT_HOUR,
+    MORNING_BRIEFING_DEFAULT_MINUTE,
+    NOTIFICATION_POLL_SECONDS,
+    get_cached_timezone,
+    load_profile_cache,
+)
 from app.routers import auth, chat, health, people, planning, profile, todos
 from app.services.notifications import process_due_notifications
 from app.services.scheduled_jobs import (
@@ -30,7 +39,6 @@ from app.services.scheduled_jobs import (
     key_date_alerts,
     morning_briefing,
 )
-from app.services.timezone import get_user_tz
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +47,17 @@ scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Resolve user timezone so cron jobs fire at local time, not UTC
+    # Load profile cache (includes timezone) so cron jobs fire at local time
     async with async_session_maker() as db:
-        user_tz = await get_user_tz(db)
+        await load_profile_cache(db)
+    user_tz = get_cached_timezone()
     logger.info("Scheduler using timezone: %s", user_tz)
 
     # Startup
     scheduler.add_job(
         process_due_notifications,
         "interval",
-        seconds=settings.notification_poll_seconds,
+        seconds=NOTIFICATION_POLL_SECONDS,
         args=[async_session_maker],
         id="notification_poller",
     )
@@ -56,8 +65,8 @@ async def lifespan(app: FastAPI):
         scheduler.add_job(
             morning_briefing,
             CronTrigger(
-                hour=settings.morning_briefing_default_hour,
-                minute=settings.morning_briefing_default_minute,
+                hour=MORNING_BRIEFING_DEFAULT_HOUR,
+                minute=MORNING_BRIEFING_DEFAULT_MINUTE,
                 timezone=user_tz,
             ),
             args=[async_session_maker],
@@ -66,14 +75,14 @@ async def lifespan(app: FastAPI):
     if settings.deadline_warning_enabled:
         scheduler.add_job(
             deadline_warning_scan,
-            CronTrigger(hour=settings.deadline_warning_hour, minute=0, timezone=user_tz),
+            CronTrigger(hour=DEADLINE_WARNING_HOUR, minute=0, timezone=user_tz),
             args=[async_session_maker],
             id="deadline_warning",
         )
     if settings.key_date_alert_enabled:
         scheduler.add_job(
             key_date_alerts,
-            CronTrigger(hour=settings.key_date_alert_hour, minute=0, timezone=user_tz),
+            CronTrigger(hour=KEY_DATE_ALERT_HOUR, minute=0, timezone=user_tz),
             args=[async_session_maker],
             id="key_date_alerts",
         )

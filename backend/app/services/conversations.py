@@ -17,15 +17,15 @@ import anthropic
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.globals import (
+    COST_PER_M_CACHE_READ,
+    COST_PER_M_CACHE_WRITE,
+    COST_PER_M_INPUT,
+    COST_PER_M_OUTPUT,
+)
 from app.models.tables import Interaction, LlmCall
 from app.services.serialization import model_to_dict
 from app.services.timezone import parse_dt
-
-# Sonnet 4.6 pricing (per million tokens)
-_COST_PER_M_INPUT = 3.0
-_COST_PER_M_OUTPUT = 15.0  # also covers thinking tokens
-_COST_PER_M_CACHE_READ = 0.30
-_COST_PER_M_CACHE_WRITE = 3.75
 
 
 async def search_conversations(
@@ -124,10 +124,10 @@ async def log_llm_call(
     cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
 
     cost = (
-        input_tokens * _COST_PER_M_INPUT
-        + cache_read * _COST_PER_M_CACHE_READ
-        + cache_creation * _COST_PER_M_CACHE_WRITE
-        + (output_tokens + thinking_tokens) * _COST_PER_M_OUTPUT
+        input_tokens * COST_PER_M_INPUT
+        + cache_read * COST_PER_M_CACHE_READ
+        + cache_creation * COST_PER_M_CACHE_WRITE
+        + (output_tokens + thinking_tokens) * COST_PER_M_OUTPUT
     ) / 1_000_000
 
     # Serialize the full API response for auditability.

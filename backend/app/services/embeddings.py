@@ -6,11 +6,11 @@ import logging
 from openai import AsyncOpenAI
 
 from app.config import settings
+from app.globals import EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
 
 _client: AsyncOpenAI | None = None
-_MODEL = "text-embedding-3-small"
 
 
 def _get_client() -> AsyncOpenAI:
@@ -23,7 +23,7 @@ def _get_client() -> AsyncOpenAI:
 async def get_embedding(text: str) -> list[float]:
     """Get embedding vector for a single text string."""
     client = _get_client()
-    resp = await client.embeddings.create(model=_MODEL, input=text)
+    resp = await client.embeddings.create(model=EMBEDDING_MODEL, input=text)
     return resp.data[0].embedding
 
 
@@ -32,7 +32,7 @@ async def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
     client = _get_client()
-    resp = await client.embeddings.create(model=_MODEL, input=texts)
+    resp = await client.embeddings.create(model=EMBEDDING_MODEL, input=texts)
     return [item.embedding for item in resp.data]
 
 

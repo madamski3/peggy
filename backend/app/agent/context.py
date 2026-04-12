@@ -21,8 +21,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.globals import get_cached_timezone
 from app.services.profile import get_active_facts
-from app.services.timezone import user_tz_from_facts
 
 
 # ── Intent Detection ─────────────────────────────────────────────
@@ -97,9 +97,9 @@ async def assemble_context(
     todos, etc.) is fetched by the agent via tool calls — not
     pre-loaded here.
     """
-    # Resolve user timezone and name from profile facts
+    # Resolve user timezone from cache, name from profile facts
+    user_tz = get_cached_timezone()
     core_facts = await get_active_facts(db)
-    user_tz = user_tz_from_facts(core_facts)
     user_name = None
     for fact in core_facts:
         if fact.key == "name" and fact.value:

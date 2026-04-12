@@ -32,7 +32,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models.tables import ScheduledNotification, Todo
 from app.services.serialization import model_to_dict
-from app.services.timezone import get_user_tz, parse_dt
+from app.globals import get_cached_timezone
+from app.services.timezone import parse_dt
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ async def get_todos(db: AsyncSession, filters: dict[str, Any] | None = None) -> 
         for tag in filters["tags"]:
             query = query.where(Todo.tags.contains([tag]))
     if "scheduled_date" in filters:
-        user_tz = await get_user_tz(db)
+        user_tz = get_cached_timezone()
         day = parse_dt(filters["scheduled_date"]).date()
         day_start = datetime(day.year, day.month, day.day, tzinfo=user_tz)
         day_end = datetime(day.year, day.month, day.day, 23, 59, 59, tzinfo=user_tz)

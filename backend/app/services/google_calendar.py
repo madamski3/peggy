@@ -28,8 +28,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.services.timezone import parse_dt
+from app.globals import CALENDAR_ASSISTANT_COLOR_ID, CALENDAR_ASSISTANT_TAG
 from app.models.tables import Credential
+from app.services.timezone import parse_dt
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 SERVICE_KEY = "google_calendar"
-ASSISTANT_COLOR_ID = "9"  # Blueberry in Google Calendar
-ASSISTANT_TAG = "[via Assistant]"
 
 
 # ── Token Management ────────────────────────────────────────────
@@ -116,8 +115,8 @@ def _normalize_event(event: dict) -> dict:
 
     description = event.get("description", "")
     is_assistant = (
-        event.get("colorId") == ASSISTANT_COLOR_ID
-        or ASSISTANT_TAG in description
+        event.get("colorId") == CALENDAR_ASSISTANT_COLOR_ID
+        or CALENDAR_ASSISTANT_TAG in description
     )
 
     return {
@@ -206,12 +205,12 @@ async def create_event(
     calendar_id = await _resolve_calendar_id(db)
 
     # Tag description
-    tagged_description = f"{description}\n{ASSISTANT_TAG}".strip() if description else ASSISTANT_TAG
+    tagged_description = f"{description}\n{CALENDAR_ASSISTANT_TAG}".strip() if description else CALENDAR_ASSISTANT_TAG
 
     body: dict = {
         "summary": summary,
         "description": tagged_description,
-        "colorId": ASSISTANT_COLOR_ID,
+        "colorId": CALENDAR_ASSISTANT_COLOR_ID,
     }
 
     if location:

@@ -18,10 +18,9 @@ from pydantic import BaseModel
 
 from app.agent.client import get_client
 from app.agent.context import build_conversation_messages
-logger = logging.getLogger(__name__)
+from app.globals import PLANNER_MAX_TOKENS, PLANNER_MODEL
 
-_PLANNER_MODEL = "claude-haiku-4-5-20251001"
-_PLANNER_MAX_TOKENS = 1024
+logger = logging.getLogger(__name__)
 
 _PLANNER_SYSTEM_PROMPT = """\
 You are a strategy planner for a personal assistant. Your job is to analyze the \
@@ -105,8 +104,8 @@ async def run_planner(
     try:
         client = get_client()
         response = await client.messages.create(
-            model=_PLANNER_MODEL,
-            max_tokens=_PLANNER_MAX_TOKENS,
+            model=PLANNER_MODEL,
+            max_tokens=PLANNER_MAX_TOKENS,
             system=_PLANNER_SYSTEM_PROMPT,
             messages=messages,
         )

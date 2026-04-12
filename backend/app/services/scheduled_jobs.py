@@ -17,11 +17,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import settings
+from app.globals import (
+    DEADLINE_WARNING_DAYS_AHEAD,
+    KEY_DATE_ALERT_DAYS_AHEAD,
+    get_cached_timezone,
+)
 from app.models.tables import Person
 from app.services import daily_plans
 from app.services.notifications import send_ntfy
 from app.services.proactive import invoke_agent_proactively
-from app.services.timezone import get_user_tz
 from app.services.todos import get_todos
 
 logger = logging.getLogger(__name__)
@@ -53,8 +57,7 @@ async def morning_briefing(session_factory: async_sessionmaker) -> None:
     payload = response.get("structured_payload")
     if isinstance(payload, dict) and payload.get("type") == "daily_plan":
         async with session_factory() as db:
-            user_tz = await get_user_tz(db)
-            today = datetime.now(user_tz).date()
+            today = datetime.now(get_cached_timezone()).date()
             await daily_plans.save_proposal(
                 db, today, payload, response.get("spoken_summary")
             )
@@ -78,10 +81,9 @@ async def deadline_warning_scan(session_factory: async_sessionmaker) -> None:
     logger.info("Running deadline warning scan")
 
     async with session_factory() as db:
-        user_tz = await get_user_tz(db)
-        now = datetime.now(user_tz)
+        now = datetime.now(get_cached_timezone())
 
-        horizon = now + timedelta(days=settings.deadline_warning_days_ahead)
+        horizon = now + timedelta(days=DEADLINE_WARNING_DAYS_AHEAD)
         deadline_str = horizon.strftime("%Y-%m-%d")
 
         approaching = await get_todos(db, {
@@ -127,10 +129,9 @@ async def key_date_alerts(session_factory: async_sessionmaker) -> None:
     logger.info("Running key date alerts scan")
 
     async with session_factory() as db:
-        user_tz = await get_user_tz(db)
-        today = datetime.now(user_tz).date()
+        today = datetime.now(get_cached_timezone()).date()
 
-        horizon = today + timedelta(days=settings.key_date_alert_days_ahead)
+        horizon = today + timedelta(days=KEY_DATE_ALERT_DAYS_AHEAD)
 
         # Load all people with key_dates
         result = await db.execute(
@@ -157,7 +158,7 @@ async def key_date_alerts(session_factory: async_sessionmaker) -> None:
                     this_year = dt.replace(year=today.year + 1)
 
                 days_until = (this_year - today).days
-                if 0 <= days_until <= settings.key_date_alert_days_ahead:
+                if 0 <= days_until <= KEY_DATE_ALERT_DAYS_AHEAD:
                     if days_until == 0:
                         timing = "today"
                     elif days_until == 1:
