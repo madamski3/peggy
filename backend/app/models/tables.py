@@ -252,6 +252,7 @@ class LlmCall(Base):
         Numeric(precision=10, scale=6), server_default=text("0")
     )
     raw_response: Mapped[dict | None] = mapped_column(JSONB)
+    tools: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )

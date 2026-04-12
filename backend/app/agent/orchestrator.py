@@ -131,6 +131,10 @@ async def run_agent_loop(
     tool_schemas = get_tool_schemas_for_names(selected_tool_names)
     tool_names_for_llm = sorted(t["name"] for t in tool_schemas)
     logger.info(f"Tools for LLM: {tool_names_for_llm}")
+    tools_meta = {
+        "selected": sorted(selected_tool_names),
+        "scores": dict(ranked_scores),
+    }
     final_text = ""
 
     for round_num in range(settings.agent_max_tool_rounds):
@@ -143,7 +147,7 @@ async def run_agent_loop(
             effort=plan.result.effort,
         )
 
-        await log_llm_call(db, session_id, round_num + 1, response)
+        await log_llm_call(db, session_id, round_num + 1, response, tools=tools_meta)
 
         # Check if Claude refused the request
         if response.stop_reason == "refusal":

@@ -113,6 +113,7 @@ async def log_llm_call(
     session_id: uuid.UUID,
     round_number: int,
     response: anthropic.types.Message,
+    tools: dict | None = None,
 ) -> LlmCall:
     """Persist metadata from a single LLM API call."""
     usage = response.usage
@@ -149,6 +150,7 @@ async def log_llm_call(
         cache_creation_tokens=cache_creation,
         estimated_cost_usd=round(cost, 6),
         raw_response=raw,
+        tools=tools,
     )
     db.add(llm_call)
     await db.flush()
