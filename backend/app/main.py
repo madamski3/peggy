@@ -14,6 +14,8 @@ Also starts APScheduler on startup with:
 import logging
 from contextlib import asynccontextmanager
 
+logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s: %(message)s")
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
