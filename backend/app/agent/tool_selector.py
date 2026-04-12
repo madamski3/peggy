@@ -12,11 +12,21 @@ has basic read capabilities regardless of similarity scores.
 
 import logging
 import math
+from dataclasses import dataclass, field
 
 from app.agent.tools.registry import TOOL_REGISTRY, ToolDefinition, _GENERAL_TOOLS
 from app.services.embeddings import get_embedding, get_embeddings_batch
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ToolSelectionResult:
+    """Result of vector-search tool selection."""
+
+    selected: set[str] = field(default_factory=set)
+    scores: dict[str, float] = field(default_factory=dict)
+
 
 # Module-level cache: tool name → normalized embedding vector
 _tool_vectors: dict[str, list[float]] = {}
@@ -74,7 +84,7 @@ async def select_tools(
     conversation_history: list[dict] | None,
     top_k: int = 12,
     threshold: float = 0.40,
-) -> set[str]:
+) -> ToolSelectionResult:
     """Select relevant tools for a turn via vector similarity.
 
     Args:
@@ -84,7 +94,7 @@ async def select_tools(
         threshold: Minimum cosine similarity score to include a tool.
 
     Returns:
-        Set of tool names to include in the LLM call.
+        ToolSelectionResult with selected tool names and all similarity scores.
     """
     if not _initialized:
         await initialize()
@@ -102,7 +112,7 @@ async def select_tools(
 
     # Score all tools by cosine similarity (dot product of normalized vectors)
     scores = {
-        name: sum(a * b for a, b in zip(query_vec, vec))
+        name: round(sum(a * b for a, b in zip(query_vec, vec)), 4)
         for name, vec in _tool_vectors.items()
     }
 
@@ -112,4 +122,4 @@ async def select_tools(
     # Always include baseline read tools
     selected |= _GENERAL_TOOLS
 
-    return selected
+    return ToolSelectionResult(selected=selected, scores=scores)

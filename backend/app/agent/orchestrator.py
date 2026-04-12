@@ -102,8 +102,14 @@ async def run_agent_loop(
         await log_llm_call(db, session_id, 0, plan.raw_response)
     logger.info(f"Planner: effort={plan.result.effort}, components={plan.result.components}")
 
-    selected_tool_names = await select_tools(user_message, conversation_history)
-    logger.info(f"Tool selector: {sorted(selected_tool_names)}")
+    tool_selection = await select_tools(user_message, conversation_history)
+    selected_tool_names = tool_selection.selected
+    ranked_scores = sorted(tool_selection.scores.items(), key=lambda x: x[1], reverse=True)
+    logger.debug(f"Tool selector scores: {ranked_scores}")
+    selected_with_scores = [
+        (name, score) for name, score in ranked_scores if name in selected_tool_names
+    ]
+    logger.info(f"Tool selector: {selected_with_scores}")
 
     # ── Step A.3: Compose system prompt from relevant components ──
     context["strategy"] = plan.result.strategy
@@ -123,6 +129,8 @@ async def run_agent_loop(
     # end_turn (i.e. it's done calling tools), extract the final text and break.
     actions_taken: list[ActionTaken] = []
     tool_schemas = get_tool_schemas_for_names(selected_tool_names)
+    tool_names_for_llm = sorted(t["name"] for t in tool_schemas)
+    logger.info(f"Tools for LLM: {tool_names_for_llm}")
     final_text = ""
 
     for round_num in range(settings.agent_max_tool_rounds):
