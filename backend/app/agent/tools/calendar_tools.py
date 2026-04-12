@@ -67,6 +67,8 @@ async def handle_find_free_time(db: AsyncSession, **kwargs: Any) -> dict:
         time_max=kwargs["time_max"],
         duration_minutes=kwargs.get("duration_minutes", 30),
     )
+    if isinstance(slots, dict) and "error" in slots:
+        return slots
     return {"free_slots": slots, "count": len(slots)}
 
 

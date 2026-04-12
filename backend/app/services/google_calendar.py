@@ -152,7 +152,7 @@ async def list_events(
     time_min: str,
     time_max: str,
     max_results: int = 50,
-) -> list[dict]:
+) -> list[dict] | dict:
     """List calendar events in a time range."""
     creds = await get_google_credentials(db)
     if not creds:
@@ -174,12 +174,20 @@ async def list_events(
 
     try:
         raw_events = await asyncio.to_thread(_fetch, calendar_id)
-    except Exception:
+    except Exception as exc:
         if calendar_id != settings.google_calendar_id:
-            logger.warning(f"Calendar API failed for {calendar_id}, falling back to default")
-            raw_events = await asyncio.to_thread(_fetch, settings.google_calendar_id)
-        else:
-            raise
+            logger.error(
+                "Calendar API call failed for configured primary email '%s': %s",
+                calendar_id, exc,
+            )
+            return {
+                "error": (
+                    f"Calendar API rejected the configured primary email ({calendar_id}). "
+                    "Please verify the Primary email on your Profile page matches "
+                    "the Google account you authenticated with."
+                )
+            }
+        raise
 
     # The Google SDK may have silently refreshed the access token during the
     # API call. Persist it so subsequent calls don't need to refresh again.
@@ -233,12 +241,20 @@ async def create_event(
 
     try:
         raw = await asyncio.to_thread(_create, calendar_id)
-    except Exception:
+    except Exception as exc:
         if calendar_id != settings.google_calendar_id:
-            logger.warning(f"Calendar API failed for {calendar_id}, falling back to default")
-            raw = await asyncio.to_thread(_create, settings.google_calendar_id)
-        else:
-            raise
+            logger.error(
+                "Calendar API call failed for configured primary email '%s': %s",
+                calendar_id, exc,
+            )
+            return {
+                "error": (
+                    f"Calendar API rejected the configured primary email ({calendar_id}). "
+                    "Please verify the Primary email on your Profile page matches "
+                    "the Google account you authenticated with."
+                )
+            }
+        raise
 
     if creds.token:
         await save_google_credentials(db, creds)
@@ -295,12 +311,20 @@ async def update_event(
 
     try:
         raw = await asyncio.to_thread(_update, calendar_id)
-    except Exception:
+    except Exception as exc:
         if calendar_id != settings.google_calendar_id:
-            logger.warning(f"Calendar API failed for {calendar_id}, falling back to default")
-            raw = await asyncio.to_thread(_update, settings.google_calendar_id)
-        else:
-            raise
+            logger.error(
+                "Calendar API call failed for configured primary email '%s': %s",
+                calendar_id, exc,
+            )
+            return {
+                "error": (
+                    f"Calendar API rejected the configured primary email ({calendar_id}). "
+                    "Please verify the Primary email on your Profile page matches "
+                    "the Google account you authenticated with."
+                )
+            }
+        raise
 
     if creds.token:
         await save_google_credentials(db, creds)
@@ -325,12 +349,20 @@ async def delete_event(db: AsyncSession, event_id: str) -> dict:
 
     try:
         await asyncio.to_thread(_delete, calendar_id)
-    except Exception:
+    except Exception as exc:
         if calendar_id != settings.google_calendar_id:
-            logger.warning(f"Calendar API failed for {calendar_id}, falling back to default")
-            await asyncio.to_thread(_delete, settings.google_calendar_id)
-        else:
-            raise
+            logger.error(
+                "Calendar API call failed for configured primary email '%s': %s",
+                calendar_id, exc,
+            )
+            return {
+                "error": (
+                    f"Calendar API rejected the configured primary email ({calendar_id}). "
+                    "Please verify the Primary email on your Profile page matches "
+                    "the Google account you authenticated with."
+                )
+            }
+        raise
 
     if creds.token:
         await save_google_credentials(db, creds)
@@ -343,7 +375,7 @@ async def find_free_time(
     time_min: str,
     time_max: str,
     duration_minutes: int = 30,
-) -> list[dict]:
+) -> list[dict] | dict:
     """Find free time slots of at least `duration_minutes` in a time range."""
     creds = await get_google_credentials(db)
     if not creds:
@@ -365,12 +397,20 @@ async def find_free_time(
 
     try:
         busy = await asyncio.to_thread(_query_freebusy, calendar_id)
-    except Exception:
+    except Exception as exc:
         if calendar_id != settings.google_calendar_id:
-            logger.warning(f"Calendar API failed for {calendar_id}, falling back to default")
-            busy = await asyncio.to_thread(_query_freebusy, settings.google_calendar_id)
-        else:
-            raise
+            logger.error(
+                "Calendar API call failed for configured primary email '%s': %s",
+                calendar_id, exc,
+            )
+            return {
+                "error": (
+                    f"Calendar API rejected the configured primary email ({calendar_id}). "
+                    "Please verify the Primary email on your Profile page matches "
+                    "the Google account you authenticated with."
+                )
+            }
+        raise
 
     if creds.token:
         await save_google_credentials(db, creds)

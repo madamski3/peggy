@@ -151,12 +151,22 @@ async def list_emails(
 
     try:
         emails = await asyncio.to_thread(_fetch, user_id)
-    except Exception:
+    except Exception as exc:
         if user_id != _DEFAULT_USER_ID:
-            logger.warning(f"Gmail API failed for {user_id}, falling back to default")
-            emails = await asyncio.to_thread(_fetch, _DEFAULT_USER_ID)
-        else:
-            raise
+            logger.error(
+                "Gmail API call failed for configured primary email '%s': %s",
+                user_id, exc,
+            )
+            return {
+                "error": (
+                    f"Gmail API rejected the configured primary email ({user_id}). "
+                    "This usually means the Google account you authenticated with "
+                    "does not have access to this mailbox. Please re-check your "
+                    "Primary email on the Profile page or re-authenticate with "
+                    "the correct Google account."
+                )
+            }
+        raise
 
     if creds.token:
         await save_google_credentials(db, creds)
@@ -190,12 +200,22 @@ async def get_email_detail(db: AsyncSession, message_id: str) -> dict:
 
     try:
         msg = await asyncio.to_thread(_fetch, user_id)
-    except Exception:
+    except Exception as exc:
         if user_id != _DEFAULT_USER_ID:
-            logger.warning(f"Gmail API failed for {user_id}, falling back to default")
-            msg = await asyncio.to_thread(_fetch, _DEFAULT_USER_ID)
-        else:
-            raise
+            logger.error(
+                "Gmail API call failed for configured primary email '%s': %s",
+                user_id, exc,
+            )
+            return {
+                "error": (
+                    f"Gmail API rejected the configured primary email ({user_id}). "
+                    "This usually means the Google account you authenticated with "
+                    "does not have access to this mailbox. Please re-check your "
+                    "Primary email on the Profile page or re-authenticate with "
+                    "the correct Google account."
+                )
+            }
+        raise
 
     if creds.token:
         await save_google_credentials(db, creds)

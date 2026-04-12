@@ -115,7 +115,7 @@ async def get_primary_email(db: AsyncSession) -> str | None:
             and contact.get("primary") is True
             and contact.get("value")
         ):
-            return contact["value"]
+            return contact["value"].strip().lower()
 
     return None
 
