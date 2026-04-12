@@ -133,7 +133,7 @@ async def run_agent_loop(
     logger.info(f"Tools for LLM: {tool_names_for_llm}")
     tools_meta = {
         "selected": sorted(selected_tool_names),
-        "scores": dict(ranked_scores),
+        "scores": ranked_scores,
     }
     final_text = ""
 
