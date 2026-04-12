@@ -1,27 +1,15 @@
-export interface PlanTask {
+export interface PlanEvent {
   title: string;
   scheduled_start: string;
   scheduled_end: string;
-  estimated_duration_minutes: number;
-}
-
-export interface PlanItem {
-  todo_id: string;
-  todo_title?: string;
-  tasks: PlanTask[];
-  create_calendar_events: boolean;
-}
-
-export interface ExistingEvent {
-  title: string;
-  start: string;
-  end: string;
+  todo_id: string | null;
+  proposed: boolean;
 }
 
 export interface DailyPlanPayload {
   type: "daily_plan";
-  existing_events?: ExistingEvent[];
-  plan_items: PlanItem[];
+  date?: string;
+  events: PlanEvent[];
 }
 
 export interface ScheduleItem {

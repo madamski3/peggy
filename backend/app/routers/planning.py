@@ -40,29 +40,25 @@ Return a structured_payload with EXACTLY this schema (no extra keys):
 ```json
 {
   "type": "daily_plan",
-  "existing_events": [
-    {"title": "Meeting name", "start": "ISO8601", "end": "ISO8601"}
-  ],
-  "plan_items": [
+  "date": "YYYY-MM-DD",
+  "events": [
     {
-      "todo_id": "uuid-of-parent-todo",
-      "todo_title": "Human-readable todo title",
-      "tasks": [
-        {
-          "title": "Task title",
-          "scheduled_start": "ISO8601",
-          "scheduled_end": "ISO8601",
-          "estimated_duration_minutes": 60
-        }
-      ],
-      "create_calendar_events": true
+      "title": "Event or todo title",
+      "scheduled_start": "ISO8601 with timezone",
+      "scheduled_end": "ISO8601 with timezone",
+      "todo_id": "uuid-of-todo OR null for calendar-only events",
+      "proposed": true
     }
   ]
 }
 ```
-- existing_events: today's calendar events (read-only context for the user)
-- plan_items: proposed work blocks, each linked to a todo by todo_id
-- Each item MUST have ISO8601 scheduled_start and scheduled_end in the user's timezone
+The events array is a flat list containing ALL events for the day:
+- Calendar events already on the schedule: proposed=false, todo_id=null
+- Todos already scheduled for today: proposed=false, todo_id=<their uuid>
+- Newly proposed todos from the backlog: proposed=true, todo_id=<their uuid>
+
+Each event MUST have ISO8601 scheduled_start and scheduled_end in the user's timezone.
+Sort events by scheduled_start.
 
 Also include a brief spoken_summary (2-3 sentences for a push notification).\
 """
@@ -79,7 +75,7 @@ class TodoReviewItem(BaseModel):
 
 class PlanningSubmission(BaseModel):
     review_items: list[TodoReviewItem] = []
-    approved_plan_items: list[dict[str, Any]] | None = None
+    approved_events: list[dict[str, Any]] | None = None
     plan_id: str | None = None
 
 
@@ -125,6 +121,42 @@ async def _get_review_todos(db: AsyncSession) -> tuple[list[dict], str]:
 
     yesterday = now_local.date() - timedelta(days=1)
     return todo_dicts, str(yesterday)
+
+
+async def _enrich_events_with_todo_ids(db: AsyncSession, proposal: dict) -> dict:
+    """Link calendar events in the proposal to their todos.
+
+    Looks up todos that have a calendar_event_id and matches them to
+    events in the proposal.  Calendar events from Google include an ``id``
+    field that corresponds to ``calendar_event_id`` on the todo.  The
+    agent may also include an ``event_id`` from the calendar API.
+    """
+    events = proposal.get("events", [])
+    if not events:
+        return proposal
+
+    # Build lookup: calendar_event_id -> todo_id for all todos with calendar links
+    result = await db.execute(
+        select(Todo.id, Todo.calendar_event_id).where(
+            Todo.calendar_event_id.isnot(None),
+            Todo.status.notin_(["completed", "cancelled"]),
+        )
+    )
+    cal_to_todo = {row.calendar_event_id: str(row.id) for row in result.all()}
+
+    if not cal_to_todo:
+        return proposal
+
+    for event in events:
+        # Skip events that already have a todo_id
+        if event.get("todo_id"):
+            continue
+        # Match by event_id if the agent included it from calendar data
+        event_id = event.get("event_id")
+        if event_id and event_id in cal_to_todo:
+            event["todo_id"] = cal_to_todo[event_id]
+
+    return proposal
 
 
 async def _generate_plan(prompt: str) -> dict | None:
@@ -199,23 +231,22 @@ async def submit_planning(body: PlanningSubmission, db: AsyncSession = Depends(g
                 raise HTTPException(status_code=404, detail=f"Todo {item.todo_id} not found")
             completed += 1
         elif item.action == "reschedule":
-            result = await todo_service.reschedule_todo(db, item.todo_id)
+            result = await todo_service.send_to_backlog(
+                db, item.todo_id, notes=item.completion_notes
+            )
             if result is None:
                 raise HTTPException(status_code=404, detail=f"Todo {item.todo_id} not found")
-            await todo_service.update_todo(
-                db, item.todo_id, {"scheduled_start": None, "scheduled_end": None}
-            )
             rescheduled += 1
 
-    # Step 2: execute approved plan items
-    plan_result = {"items_created": 0, "events_created": 0}
-    if body.approved_plan_items:
-        plan_result = await planning_exec.execute_daily_plan(db, body.approved_plan_items)
+    # Step 2: execute approved events (schedule todos + create calendar events)
+    plan_result = {"todos_scheduled": 0, "calendar_events_created": 0}
+    if body.approved_events:
+        plan_result = await planning_exec.execute_daily_plan(db, body.approved_events)
 
-    # Step 3: mark plan as approved, storing only the accepted items
+    # Step 3: mark plan as approved, storing only the accepted events
     if body.plan_id:
         await plan_service.mark_approved(
-            db, body.plan_id, approved_plan_items=body.approved_plan_items
+            db, body.plan_id, approved_events=body.approved_events
         )
 
     await db.commit()
@@ -233,10 +264,11 @@ async def regenerate_plan(db: AsyncSession = Depends(get_db)):
     if result is None:
         raise HTTPException(status_code=502, detail="Agent did not produce a plan proposal")
 
+    proposal = await _enrich_events_with_todo_ids(db, result["proposal"])
     user_tz = get_cached_timezone()
     today = datetime.now(user_tz).date()
     plan = await plan_service.save_proposal(
-        db, today, result["proposal"], result.get("spoken_summary")
+        db, today, proposal, result.get("spoken_summary")
     )
     await db.commit()
     return plan
@@ -259,10 +291,11 @@ async def refine_plan(body: RefineRequest, db: AsyncSession = Depends(get_db)):
     if result is None:
         raise HTTPException(status_code=502, detail="Agent did not produce an updated plan")
 
+    proposal = await _enrich_events_with_todo_ids(db, result["proposal"])
     user_tz = get_cached_timezone()
     today = datetime.now(user_tz).date()
     plan = await plan_service.save_proposal(
-        db, today, result["proposal"], result.get("spoken_summary")
+        db, today, proposal, result.get("spoken_summary")
     )
     await db.commit()
     return plan

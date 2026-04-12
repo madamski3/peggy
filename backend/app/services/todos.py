@@ -191,10 +191,11 @@ async def complete_todo(
     if completion_notes is not None:
         todo.completion_notes = completion_notes
 
-    # Cascade DOWN: cancel unfinished children
+    # Cascade DOWN: complete unfinished children
     for child in todo.children:
         if child.status not in ("completed", "cancelled"):
-            child.status = "cancelled"
+            child.status = "completed"
+            child.completed_at = datetime.now(timezone.utc)
             child.updated_at = datetime.now(timezone.utc)
             if child.calendar_event_id:
                 await _delete_calendar_event(db, child)
@@ -250,6 +251,37 @@ async def reschedule_todo(
     await db.flush()
     await _sync_calendar(db, todo)
 
+    return model_to_dict(todo)
+
+
+async def send_to_backlog(
+    db: AsyncSession,
+    todo_id: str | uuid.UUID,
+    notes: str | None = None,
+) -> dict | None:
+    """Move a scheduled todo back to backlog.
+
+    Atomically clears scheduling fields, sets status to backlog,
+    increments the deferred counter, saves optional notes, and
+    deletes any linked calendar event.
+    """
+    todo = await _get_todo(db, todo_id)
+    if todo is None:
+        return None
+
+    todo.scheduled_start = None
+    todo.scheduled_end = None
+    todo.status = "backlog"
+    todo.deferred_count += 1
+    todo.updated_at = datetime.now(timezone.utc)
+
+    if notes:
+        todo.completion_notes = notes
+
+    if todo.calendar_event_id:
+        await _delete_calendar_event(db, todo)
+
+    await db.flush()
     return model_to_dict(todo)
 
 

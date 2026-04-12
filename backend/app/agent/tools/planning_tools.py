@@ -1,10 +1,10 @@
 """Daily planning tool definitions for the agent.
 
-Provides the execute_daily_plan tool, which atomically creates child
-todos with calendar events for an entire daily plan in one confirmation step.
+Provides the execute_daily_plan tool, which schedules todos and creates
+calendar events for an approved daily plan.
 
 Registered tools:
-  - execute_daily_plan  (HIGH_STAKES) -- create child todos + calendar events for a full daily plan
+  - execute_daily_plan  (HIGH_STAKES) -- schedule todos + create calendar events for a daily plan
 """
 
 from typing import Any
@@ -16,12 +16,12 @@ from app.services import planning as planning_service
 
 
 async def handle_execute_daily_plan(db: AsyncSession, **kwargs: Any) -> dict:
-    return await planning_service.execute_daily_plan(db, kwargs["plan_items"])
+    return await planning_service.execute_daily_plan(db, kwargs["events"])
 
 
 register_tool(ToolDefinition(
     name="execute_daily_plan",
-    description="Execute a daily plan: create scheduled child todos with calendar events for multiple parent todos (requires confirmation).",
+    description="Execute a daily plan: schedule todos and create calendar events for approved plan events (requires confirmation).",
     embedding_text=(
         "planning: execute_daily_plan — execute, run, activate a daily plan, "
         "batch schedule todos and create calendar events for the day. Plan my day. "
@@ -30,33 +30,22 @@ register_tool(ToolDefinition(
     input_schema={
         "type": "object",
         "properties": {
-            "plan_items": {
+            "events": {
                 "type": "array",
                 "items": {
                     "type": "object",
                     "properties": {
-                        "todo_id": {"type": "string"},
-                        "tasks": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "title": {"type": "string"},
-                                    "description": {"type": "string"},
-                                    "scheduled_start": {"type": "string"},
-                                    "scheduled_end": {"type": "string"},
-                                    "estimated_duration_minutes": {"type": "integer"},
-                                },
-                                "required": ["title", "scheduled_start", "scheduled_end"],
-                            },
-                        },
-                        "create_calendar_events": {"type": "boolean"},
+                        "title": {"type": "string"},
+                        "scheduled_start": {"type": "string"},
+                        "scheduled_end": {"type": "string"},
+                        "todo_id": {"type": ["string", "null"]},
+                        "proposed": {"type": "boolean"},
                     },
-                    "required": ["todo_id", "tasks"],
+                    "required": ["title", "scheduled_start", "scheduled_end", "todo_id", "proposed"],
                 },
             },
         },
-        "required": ["plan_items"],
+        "required": ["events"],
     },
     tier=ActionTier.HIGH_STAKES,
     handler=handle_execute_daily_plan,

@@ -1,11 +1,11 @@
 """Planning service -- orchestrates daily plan execution.
 
-Creates child todos (with calendar events) under parent todos for
-an entire daily plan in a single atomic operation. Called by the
-execute_daily_plan tool after the user confirms the proposed plan.
+Schedules todos and creates calendar events for approved daily plan
+events.  Called by the planning router after the user approves the
+proposed plan.
 
 Reuses:
-  - app.services.todos.create_child_todos_batch  (child todo creation per parent)
+  - app.services.todos.update_todo  (schedule + calendar sync per todo)
 """
 
 import logging
@@ -19,43 +19,42 @@ logger = logging.getLogger(__name__)
 
 
 async def execute_daily_plan(
-    db: AsyncSession, plan_items: list[dict[str, Any]]
+    db: AsyncSession, approved_events: list[dict[str, Any]]
 ) -> dict:
-    """Execute a full daily plan: create child todos with calendar events.
+    """Execute approved daily plan events: schedule todos + create calendar events.
 
     Args:
         db: Async database session.
-        plan_items: List of plan items, each with:
-            - todo_id (str): UUID of the parent todo
-            - tasks (list[dict]): Children to create (title, scheduled_start, scheduled_end, etc.)
-            - create_calendar_events (bool): Whether to also create GCal events
-              (calendar events are now created automatically by _sync_calendar
-              whenever a todo has scheduled times, so this flag is informational)
+        approved_events: List of flat event dicts, each with:
+            - todo_id (str | None): UUID of the todo to schedule (None for calendar-only)
+            - title (str): Event title
+            - scheduled_start (str): ISO8601 start time
+            - scheduled_end (str): ISO8601 end time
+            - proposed (bool): Whether this was a new proposal
 
     Returns:
-        Summary dict with items_created, events_created, and details.
+        Summary dict with todos_scheduled and calendar_events_created.
     """
-    total_items = 0
-    details: list[dict] = []
+    todos_scheduled = 0
+    calendar_events_created = 0
 
-    for item in plan_items:
-        todo_id = item["todo_id"]
-        children_data = item.get("tasks", [])
+    for event in approved_events:
+        todo_id = event.get("todo_id")
+        if not todo_id:
+            continue
 
-        created = await todo_service.create_child_todos_batch(db, todo_id, children_data)
-        total_items += len(created)
-
-        events_created = sum(1 for c in created if c.get("calendar_event_id"))
-        details.append({
-            "todo_id": todo_id,
-            "items_created": len(created),
-            "events_created": events_created,
+        result = await todo_service.update_todo(db, todo_id, {
+            "scheduled_start": event["scheduled_start"],
+            "scheduled_end": event["scheduled_end"],
+            "status": "scheduled",
         })
 
-    total_events = sum(d["events_created"] for d in details)
+        if result:
+            todos_scheduled += 1
+            if result.get("calendar_event_id"):
+                calendar_events_created += 1
 
     return {
-        "items_created": total_items,
-        "events_created": total_events,
-        "details": details,
+        "todos_scheduled": todos_scheduled,
+        "calendar_events_created": calendar_events_created,
     }

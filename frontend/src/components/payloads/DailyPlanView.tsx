@@ -1,16 +1,21 @@
 /**
  * DailyPlanView — renders a proposed daily plan as a unified timeline.
  *
- * Shows existing calendar events (fixed anchors) alongside newly proposed
- * tasks, sorted chronologically. Visual styling distinguishes the two:
- * - Existing events: gray/muted (already on calendar)
- * - Proposed tasks: indigo accent (new additions)
+ * Shows all events for the day sorted chronologically. Visual styling
+ * distinguishes proposed new events from already-scheduled ones:
+ * - Proposed events: indigo accent (new additions)
+ * - Scheduled todos: teal accent (already on calendar, linked to a todo)
+ * - Calendar-only events: gray/muted (existing calendar events)
  */
-import type { DailyPlanPayload, ExistingEvent, PlanTask } from "../../types/payloads";
+import type { DailyPlanPayload, PlanEvent } from "../../types/payloads";
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function durationMinutes(start: string, end: string): number {
+  return Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000);
 }
 
 function formatDuration(minutes: number): string {
@@ -20,67 +25,51 @@ function formatDuration(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-type TimelineItem =
-  | { kind: "existing"; title: string; start: string; end: string }
-  | { kind: "proposed"; title: string; start: string; end: string; duration: number };
-
-function buildTimeline(payload: DailyPlanPayload): TimelineItem[] {
-  const items: TimelineItem[] = [];
-
-  for (const ev of payload.existing_events ?? []) {
-    items.push({ kind: "existing", title: ev.title, start: ev.start, end: ev.end });
-  }
-
-  for (const planItem of payload.plan_items) {
-    for (const task of planItem.tasks) {
-      items.push({
-        kind: "proposed",
-        title: task.title,
-        start: task.scheduled_start,
-        end: task.scheduled_end,
-        duration: task.estimated_duration_minutes,
-      });
-    }
-  }
-
-  items.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
-  return items;
+function eventKind(ev: PlanEvent): "proposed" | "scheduled" | "calendar" {
+  if (ev.proposed) return "proposed";
+  if (ev.todo_id) return "scheduled";
+  return "calendar";
 }
 
-function TimelineRow({ item }: { item: TimelineItem }) {
-  const isExisting = item.kind === "existing";
+function TimelineRow({ event }: { event: PlanEvent }) {
+  const kind = eventKind(event);
+  const duration = durationMinutes(event.scheduled_start, event.scheduled_end);
+
+  const borderColor =
+    kind === "proposed" ? "border-l-indigo-400"
+    : kind === "scheduled" ? "border-l-teal-400"
+    : "border-l-gray-300";
+
+  const titleColor =
+    kind === "calendar" ? "text-gray-500" : "text-gray-800";
+
+  const badgeStyle =
+    kind === "proposed" ? "bg-indigo-100 text-indigo-700"
+    : kind === "scheduled" ? "bg-teal-100 text-teal-700"
+    : "bg-gray-100 text-gray-500";
+
+  const badgeLabel =
+    kind === "proposed" ? "New"
+    : kind === "scheduled" ? "Scheduled"
+    : "Calendar";
 
   return (
-    <div
-      className={`flex items-start gap-3 py-2.5 border-l-2 pl-3 ${
-        isExisting ? "border-l-gray-300" : "border-l-indigo-400"
-      }`}
-    >
+    <div className={`flex items-start gap-3 py-2.5 border-l-2 pl-3 ${borderColor}`}>
       <div className="w-28 shrink-0 text-xs text-gray-500 pt-0.5">
-        {formatTime(item.start)} – {formatTime(item.end)}
+        {formatTime(event.scheduled_start)} – {formatTime(event.scheduled_end)}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span
-            className={`text-sm font-medium truncate ${
-              isExisting ? "text-gray-500" : "text-gray-800"
-            }`}
-          >
-            {item.title}
+          <span className={`text-sm font-medium truncate ${titleColor}`}>
+            {event.title}
           </span>
-          <span
-            className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${
-              isExisting
-                ? "bg-gray-100 text-gray-500"
-                : "bg-indigo-100 text-indigo-700"
-            }`}
-          >
-            {isExisting ? "Existing" : "New"}
+          <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${badgeStyle}`}>
+            {badgeLabel}
           </span>
         </div>
-        {item.kind === "proposed" && item.duration > 0 && (
+        {duration > 0 && (
           <div className="text-xs text-gray-400 mt-0.5">
-            {formatDuration(item.duration)}
+            {formatDuration(duration)}
           </div>
         )}
       </div>
@@ -89,14 +78,16 @@ function TimelineRow({ item }: { item: TimelineItem }) {
 }
 
 export default function DailyPlanView({ payload }: { payload: DailyPlanPayload }) {
-  const timeline = buildTimeline(payload);
+  const events = [...(payload.events ?? [])].sort(
+    (a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()
+  );
 
-  if (timeline.length === 0) {
+  if (events.length === 0) {
     return null;
   }
 
-  const existingCount = timeline.filter((i) => i.kind === "existing").length;
-  const proposedCount = timeline.filter((i) => i.kind === "proposed").length;
+  const proposedCount = events.filter((e) => e.proposed).length;
+  const existingCount = events.length - proposedCount;
   const parts = [];
   if (existingCount > 0) parts.push(`${existingCount} existing`);
   if (proposedCount > 0) parts.push(`${proposedCount} proposed`);
@@ -112,8 +103,8 @@ export default function DailyPlanView({ payload }: { payload: DailyPlanPayload }
         </div>
       </div>
       <div className="space-y-0.5">
-        {timeline.map((item, idx) => (
-          <TimelineRow key={idx} item={item} />
+        {events.map((event, idx) => (
+          <TimelineRow key={idx} event={event} />
         ))}
       </div>
     </div>

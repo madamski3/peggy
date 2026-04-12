@@ -8,7 +8,7 @@ Manages the lifecycle of proactive daily plan proposals:
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tables import DailyPlan
@@ -21,13 +21,16 @@ async def save_proposal(
     proposal: dict,
     spoken_summary: str | None = None,
 ) -> dict:
-    """Save (or replace) a proposed daily plan for the given date.
+    """Save a proposed daily plan for the given date.
 
-    If a plan with status 'proposed' already exists for this date, it is
-    deleted first so only one draft exists at a time.
+    Any existing plans with status 'proposed' for this date are set to
+    'expired' so only one active draft exists at a time.  Expired plans
+    are kept for read-only record-keeping.
     """
     await db.execute(
-        delete(DailyPlan).where(DailyPlan.plan_date == plan_date)
+        update(DailyPlan)
+        .where(and_(DailyPlan.plan_date == plan_date, DailyPlan.status == "proposed"))
+        .values(status="expired")
     )
     plan = DailyPlan(
         plan_date=plan_date,
@@ -39,18 +42,57 @@ async def save_proposal(
     return model_to_dict(plan)
 
 
-async def get_plan_for_date(db: AsyncSession, plan_date: date) -> dict | None:
-    """Return the latest plan for a date, or None."""
+def _normalize_proposal(proposal: dict) -> dict:
+    """Convert old nested plan format to flat events format on read.
+
+    Old format had ``existing_events`` + ``plan_items[].tasks[]``.
+    New format uses a single ``events[]`` array with ``proposed`` boolean.
+    """
+    if "events" in proposal:
+        return proposal
+
+    events: list[dict] = []
+    for ev in proposal.get("existing_events", []):
+        events.append({
+            "title": ev.get("title", ""),
+            "scheduled_start": ev.get("start"),
+            "scheduled_end": ev.get("end"),
+            "todo_id": None,
+            "proposed": False,
+        })
+    for item in proposal.get("plan_items", []):
+        for task in item.get("tasks", []):
+            events.append({
+                "title": task.get("title", ""),
+                "scheduled_start": task.get("scheduled_start"),
+                "scheduled_end": task.get("scheduled_end"),
+                "todo_id": item.get("todo_id"),
+                "proposed": True,
+            })
+    events.sort(key=lambda e: e.get("scheduled_start") or "")
+    return {"type": "daily_plan", "events": events}
+
+
+async def get_plan_for_date(
+    db: AsyncSession, plan_date: date, *, include_expired: bool = False
+) -> dict | None:
+    """Return the latest plan for a date, or None.
+
+    By default, expired plans are excluded so the active (proposed/approved)
+    plan is returned.  Pass ``include_expired=True`` for historical views.
+    """
+    query = select(DailyPlan).where(DailyPlan.plan_date == plan_date)
+    if not include_expired:
+        query = query.where(DailyPlan.status != "expired")
     result = await db.execute(
-        select(DailyPlan)
-        .where(DailyPlan.plan_date == plan_date)
-        .order_by(DailyPlan.created_at.desc())
-        .limit(1)
+        query.order_by(DailyPlan.created_at.desc()).limit(1)
     )
     plan = result.scalar_one_or_none()
     if plan is None:
         return None
-    return model_to_dict(plan)
+    d = model_to_dict(plan)
+    d["proposal"] = _normalize_proposal(d.get("proposal", {}))
+    return d
 
 
 async def list_plan_dates(db: AsyncSession) -> list[str]:
@@ -66,9 +108,9 @@ async def list_plan_dates(db: AsyncSession) -> list[str]:
 async def mark_approved(
     db: AsyncSession,
     plan_id: str,
-    approved_plan_items: list[dict] | None = None,
+    approved_events: list[dict] | None = None,
 ) -> None:
-    """Mark a plan as approved, storing only the accepted items."""
+    """Mark a plan as approved, storing only the accepted events."""
     import uuid as _uuid
 
     result = await db.execute(
@@ -78,6 +120,6 @@ async def mark_approved(
     if plan:
         plan.status = "approved"
         plan.approved_at = datetime.now(timezone.utc)
-        if approved_plan_items is not None:
-            updated = {**plan.proposal, "plan_items": approved_plan_items}
+        if approved_events is not None:
+            updated = {**plan.proposal, "events": approved_events}
             plan.proposal = updated

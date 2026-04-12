@@ -451,9 +451,9 @@ def _describe_action(tool_name: str, tool_args: dict) -> str:
         children = tool_args.get("children", [])
         return f"Create {len(children)} scheduled items for this todo."
     if tool_name == "execute_daily_plan":
-        items = tool_args.get("plan_items", [])
-        total = sum(len(i.get("tasks", [])) for i in items)
-        return f"Schedule {total} items across {len(items)} todos and add them to your calendar."
+        events = tool_args.get("events", [])
+        proposed = [e for e in events if e.get("proposed")]
+        return f"Schedule {len(proposed)} todos and add them to your calendar."
     if tool_name == "delete_calendar_event":
         return "Delete this event from your Google Calendar (irreversible)."
     return f"Execute {tool_name} with the provided arguments."
@@ -469,17 +469,16 @@ def _build_confirmation_summary(tool_name: str, tool_args: dict) -> str:
             preview += f", and {len(children) - 3} more"
         return f"I'd like to create {len(children)} items: {preview}. Should I go ahead?"
     if tool_name == "execute_daily_plan":
-        items = tool_args.get("plan_items", [])
+        events = tool_args.get("events", [])
         lines = []
-        for item in items:
-            for t in item.get("tasks", []):
-                start = t.get("scheduled_start", "")
+        for ev in events:
+            if ev.get("proposed"):
+                start = ev.get("scheduled_start", "")
                 time_str = start[11:16] if len(start) > 16 else start
-                lines.append(f"  \u2022 {time_str} \u2014 {t.get('title', 'untitled')}")
+                lines.append(f"  \u2022 {time_str} \u2014 {ev.get('title', 'untitled')}")
         preview = "\n".join(lines[:8])
-        total = sum(len(i.get("tasks", [])) for i in items)
-        if total > 8:
-            preview += f"\n  ... and {total - 8} more"
+        if len(lines) > 8:
+            preview += f"\n  ... and {len(lines) - 8} more"
         return f"Here's the plan I'd like to lock in:\n{preview}\n\nShall I go ahead?"
     return "I need your confirmation before proceeding with this action."
 

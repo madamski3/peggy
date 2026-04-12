@@ -6,5 +6,6 @@ When asked to plan the day:
    deadline, duration, energy_level, and preferred_window to free slots. Leave buffers.
 3. **Present** — lay out the schedule with times. Include follow_up_suggestions.
    Store the full execute_daily_plan payload in structured_payload. Do NOT execute yet.
-4. **Execute on confirmation** — retrieve plan_items from conversation history and call
+   Use a flat events array: each event has title, scheduled_start, scheduled_end, todo_id (null for calendar-only), proposed (true for new, false for existing).
+4. **Execute on confirmation** — retrieve events from conversation history and call
    execute_daily_plan directly. Do NOT re-query.

@@ -3,8 +3,7 @@ import { apiFetch } from "../../utils/api";
 import type { ReviewTodo } from "../../types/todos";
 import type {
   DailyPlanPayload,
-  ExistingEvent,
-  PlanItem,
+  PlanEvent,
 } from "../../types/payloads";
 
 /* ── Types ──────────────────────────────────────────────────────── */
@@ -25,7 +24,7 @@ interface StoredPlan {
 
 interface SubmitResult {
   review: { completed: number; rescheduled: number };
-  plan: { items_created: number; events_created: number };
+  plan: { todos_scheduled: number; calendar_events_created: number };
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
@@ -97,9 +96,9 @@ export default function PlanningPage() {
           );
           setReviewDate(data.review.review_date);
           setPlan(data.plan);
-          const planItems = data.plan?.proposal?.plan_items ?? [];
-          if (planItems.length > 0) {
-            setApprovedTodoIds(new Set(planItems.map((i) => i.todo_id)));
+          const proposedEvents = (data.plan?.proposal?.events ?? []).filter((e: PlanEvent) => e.proposed && e.todo_id);
+          if (proposedEvents.length > 0) {
+            setApprovedTodoIds(new Set(proposedEvents.map((e: PlanEvent) => e.todo_id!)));
           }
           if (data.review.todos.length === 0) {
             setStep(2);
@@ -119,9 +118,9 @@ export default function PlanningPage() {
       apiFetch<StoredPlan>(`/planning/history/${selectedDate}`)
         .then((data) => {
           setPlan(data);
-          const planItems = data?.proposal?.plan_items ?? [];
-          if (planItems.length > 0) {
-            setApprovedTodoIds(new Set(planItems.map((i) => i.todo_id)));
+          const proposedEvents = (data?.proposal?.events ?? []).filter((e: PlanEvent) => e.proposed && e.todo_id);
+          if (proposedEvents.length > 0) {
+            setApprovedTodoIds(new Set(proposedEvents.map((e: PlanEvent) => e.todo_id!)));
           }
           setLoaded(true);
         })
@@ -155,7 +154,7 @@ export default function PlanningPage() {
       });
       setPlan(newPlan);
       setApprovedTodoIds(
-        new Set((newPlan.proposal.plan_items ?? []).map((i) => i.todo_id))
+        new Set((newPlan.proposal.events ?? []).filter((e: PlanEvent) => e.proposed && e.todo_id).map((e: PlanEvent) => e.todo_id!))
       );
     } finally {
       setRegenerating(false);
@@ -175,7 +174,7 @@ export default function PlanningPage() {
       });
       setPlan(updated);
       setApprovedTodoIds(
-        new Set((updated.proposal.plan_items ?? []).map((i) => i.todo_id))
+        new Set((updated.proposal.events ?? []).filter((e: PlanEvent) => e.proposed && e.todo_id).map((e: PlanEvent) => e.todo_id!))
       );
       setFeedback("");
     } finally {
@@ -186,13 +185,13 @@ export default function PlanningPage() {
   async function handleSubmit() {
     setSubmitting(true);
     try {
-      const approvedItems = plan
-        ? (plan.proposal.plan_items ?? []).filter((i) =>
-            approvedTodoIds.has(i.todo_id)
+      const approvedEvents = plan
+        ? (plan.proposal.events ?? []).filter(
+            (e) => e.proposed && e.todo_id && approvedTodoIds.has(e.todo_id)
           )
         : [];
 
-      const submittedItems = approvedItems.length > 0 ? approvedItems : null;
+      const submittedEvents = approvedEvents.length > 0 ? approvedEvents : null;
       const res = await apiFetch<SubmitResult>("/planning/submit", {
         method: "POST",
         body: JSON.stringify({
@@ -201,18 +200,18 @@ export default function PlanningPage() {
             action: item.action,
             completion_notes: item.notes || null,
           })),
-          approved_plan_items: submittedItems,
+          approved_events: submittedEvents,
           plan_id: plan?.id ?? null,
         }),
       });
-      // Update local plan to reflect only what was approved
+      // Update local plan to reflect approved status
       if (plan) {
         setPlan({
           ...plan,
           status: "approved",
           proposal: {
             ...plan.proposal,
-            plan_items: submittedItems ?? [],
+            events: submittedEvents ?? plan.proposal.events ?? [],
           },
         });
       }
@@ -278,7 +277,7 @@ export default function PlanningPage() {
         )}
         {(!isToday || todayApproved) && plan && (
           <p className="text-xs text-gray-400 mt-2">
-            {plan.status === "approved" ? "Approved" : "Proposed"} plan
+            {plan.status === "approved" ? "Approved" : plan.status === "expired" ? "Expired" : "Proposed"} plan
           </p>
         )}
       </div>
@@ -423,43 +422,15 @@ function HistoricalPlanView({ plan }: { plan: StoredPlan | null }) {
     );
   }
 
-  const proposal = plan.proposal;
-  const existingEvents = proposal?.existing_events ?? [];
-  const planItems = proposal?.plan_items ?? [];
-
-  type TimelineEntry =
-    | { kind: "existing"; title: string; start: string; end: string }
-    | {
-        kind: "planned";
-        todoTitle: string;
-        title: string;
-        start: string;
-        end: string;
-        duration: number;
-      };
-
-  const timeline: TimelineEntry[] = [];
-
-  for (const ev of existingEvents) {
-    timeline.push({ kind: "existing", title: ev.title, start: ev.start, end: ev.end });
-  }
-
-  for (const item of planItems) {
-    for (const task of item.tasks ?? []) {
-      timeline.push({
-        kind: "planned",
-        todoTitle: item.todo_title ?? "",
-        title: task.title,
-        start: task.scheduled_start,
-        end: task.scheduled_end,
-        duration: task.estimated_duration_minutes,
-      });
-    }
-  }
-
-  timeline.sort(
-    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+  const events = [...(plan.proposal?.events ?? [])].sort(
+    (a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()
   );
+
+  function eventKind(ev: PlanEvent): "proposed" | "scheduled" | "calendar" {
+    if (ev.proposed) return "proposed";
+    if (ev.todo_id) return "scheduled";
+    return "calendar";
+  }
 
   return (
     <div className="space-y-4">
@@ -469,51 +440,57 @@ function HistoricalPlanView({ plan }: { plan: StoredPlan | null }) {
 
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-          {plan.status === "approved" ? "Approved" : "Proposed"} Plan
+          {plan.status === "approved" ? "Approved" : plan.status === "expired" ? "Expired" : "Proposed"} Plan
         </div>
 
-        {timeline.length === 0 ? (
+        {events.length === 0 ? (
           <p className="text-sm text-gray-400 py-4 text-center">
-            No events or tasks in this plan
+            No events in this plan
           </p>
         ) : (
           <div className="space-y-0.5">
-            {timeline.map((entry, idx) => (
-              <div
-                key={idx}
-                className={`flex items-start gap-3 py-2.5 border-l-2 pl-3 ${
-                  entry.kind === "existing"
-                    ? "border-l-gray-300"
-                    : "border-l-indigo-400"
-                }`}
-              >
-                <div className="w-28 shrink-0 text-xs text-gray-500 pt-0.5">
-                  {formatTime(entry.start)} – {formatTime(entry.end)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={`text-sm font-medium truncate ${
-                      entry.kind === "existing" ? "text-gray-500" : "text-gray-800"
-                    }`}>
-                      {entry.title}
-                    </span>
-                    <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                      entry.kind === "existing"
-                        ? "bg-gray-100 text-gray-500"
-                        : "bg-indigo-100 text-indigo-700"
-                    }`}>
-                      {entry.kind === "existing" ? "Calendar" : "Planned"}
-                    </span>
+            {events.map((event, idx) => {
+              const kind = eventKind(event);
+              const borderColor =
+                kind === "proposed" ? "border-l-indigo-400"
+                : kind === "scheduled" ? "border-l-teal-400"
+                : "border-l-gray-300";
+              const titleColor = kind === "calendar" ? "text-gray-500" : "text-gray-800";
+              const badgeStyle =
+                kind === "proposed" ? "bg-indigo-100 text-indigo-700"
+                : kind === "scheduled" ? "bg-teal-100 text-teal-700"
+                : "bg-gray-100 text-gray-500";
+              const badgeLabel =
+                kind === "proposed" ? "New"
+                : kind === "scheduled" ? "Scheduled"
+                : "Calendar";
+              const duration = Math.round(
+                (new Date(event.scheduled_end).getTime() - new Date(event.scheduled_start).getTime()) / 60000
+              );
+
+              return (
+                <div key={idx} className={`flex items-start gap-3 py-2.5 border-l-2 pl-3 ${borderColor}`}>
+                  <div className="w-28 shrink-0 text-xs text-gray-500 pt-0.5">
+                    {formatTime(event.scheduled_start)} – {formatTime(event.scheduled_end)}
                   </div>
-                  {entry.kind === "planned" && (
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      {entry.todoTitle && `${entry.todoTitle} · `}
-                      {entry.duration > 0 && formatDuration(entry.duration)}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-medium truncate ${titleColor}`}>
+                        {event.title}
+                      </span>
+                      <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${badgeStyle}`}>
+                        {badgeLabel}
+                      </span>
                     </div>
-                  )}
+                    {duration > 0 && (
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {formatDuration(duration)}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -681,52 +658,12 @@ function PlanStep({
     );
   }
 
-  const proposal = plan.proposal;
-  const existingEvents = proposal.existing_events ?? [];
-  const planItems = proposal.plan_items ?? [];
-
-  // Build unified timeline
-  type TimelineEntry =
-    | { kind: "existing"; title: string; start: string; end: string }
-    | {
-        kind: "proposed";
-        todoId: string;
-        todoTitle: string;
-        title: string;
-        start: string;
-        end: string;
-        duration: number;
-        approved: boolean;
-      };
-
-  const timeline: TimelineEntry[] = [];
-
-  for (const ev of existingEvents) {
-    timeline.push({ kind: "existing", title: ev.title, start: ev.start, end: ev.end });
-  }
-
-  for (const item of planItems) {
-    for (const task of item.tasks) {
-      timeline.push({
-        kind: "proposed",
-        todoId: item.todo_id,
-        todoTitle: item.todo_title ?? "",
-        title: task.title,
-        start: task.scheduled_start,
-        end: task.scheduled_end,
-        duration: task.estimated_duration_minutes,
-        approved: approvedTodoIds.has(item.todo_id),
-      });
-    }
-  }
-
-  timeline.sort(
-    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+  const events = [...(plan.proposal.events ?? [])].sort(
+    (a, b) => new Date(a.scheduled_start).getTime() - new Date(b.scheduled_start).getTime()
   );
 
-  const approvedCount = planItems.filter((i) =>
-    approvedTodoIds.has(i.todo_id)
-  ).length;
+  const proposedEvents = events.filter((e) => e.proposed && e.todo_id);
+  const approvedCount = proposedEvents.filter((e) => approvedTodoIds.has(e.todo_id!)).length;
 
   return (
     <div className="space-y-4">
@@ -741,77 +678,80 @@ function PlanStep({
             Proposed Plan
           </div>
           <div className="text-xs text-gray-400">
-            {existingEvents.length > 0 &&
-              `${existingEvents.length} existing · `}
-            {approvedCount}/{planItems.length} approved
+            {proposedEvents.length > 0 && `${approvedCount}/${proposedEvents.length} approved`}
           </div>
         </div>
 
-        {timeline.length === 0 ? (
+        {events.length === 0 ? (
           <p className="text-sm text-gray-400 py-4 text-center">
-            No events or tasks for today
+            No events for today
           </p>
         ) : (
           <div className="space-y-0.5">
-            {timeline.map((entry, idx) => (
-              <div
-                key={idx}
-                className={`flex items-start gap-3 py-2.5 border-l-2 pl-3 ${
-                  entry.kind === "existing"
-                    ? "border-l-gray-300"
-                    : entry.approved
-                      ? "border-l-indigo-400"
-                      : "border-l-gray-200 opacity-50"
-                }`}
-              >
-                {/* Checkbox for proposed items */}
-                <div className="w-5 shrink-0 pt-0.5">
-                  {entry.kind === "proposed" && (
-                    <input
-                      type="checkbox"
-                      checked={entry.approved}
-                      onChange={() => onToggle(entry.todoId)}
-                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                    />
-                  )}
-                </div>
+            {events.map((event, idx) => {
+              const isProposed = event.proposed && !!event.todo_id;
+              const isScheduledTodo = !event.proposed && !!event.todo_id;
+              const isApproved = isProposed && approvedTodoIds.has(event.todo_id!);
 
-                {/* Time */}
-                <div className="w-28 shrink-0 text-xs text-gray-500 pt-0.5">
-                  {formatTime(entry.start)} – {formatTime(entry.end)}
-                </div>
+              const borderColor = isProposed
+                ? (isApproved ? "border-l-indigo-400" : "border-l-gray-200")
+                : isScheduledTodo
+                  ? "border-l-teal-400"
+                  : "border-l-gray-300";
+              const titleColor = (!event.proposed && !event.todo_id) ? "text-gray-500" : "text-gray-800";
+              const badgeStyle = isProposed
+                ? "bg-indigo-100 text-indigo-700"
+                : isScheduledTodo
+                  ? "bg-teal-100 text-teal-700"
+                  : "bg-gray-100 text-gray-500";
+              const badgeLabel = isProposed ? "New" : isScheduledTodo ? "Scheduled" : "Calendar";
+              const duration = Math.round(
+                (new Date(event.scheduled_end).getTime() - new Date(event.scheduled_start).getTime()) / 60000
+              );
 
-                {/* Title + badge */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`text-sm font-medium truncate ${
-                        entry.kind === "existing"
-                          ? "text-gray-500"
-                          : "text-gray-800"
-                      }`}
-                    >
-                      {entry.title}
-                    </span>
-                    <span
-                      className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                        entry.kind === "existing"
-                          ? "bg-gray-100 text-gray-500"
-                          : "bg-indigo-100 text-indigo-700"
-                      }`}
-                    >
-                      {entry.kind === "existing" ? "Existing" : "New"}
-                    </span>
+              return (
+                <div
+                  key={idx}
+                  className={`flex items-start gap-3 py-2.5 border-l-2 pl-3 ${borderColor} ${
+                    isProposed && !isApproved ? "opacity-50" : ""
+                  }`}
+                >
+                  {/* Checkbox for proposed items only */}
+                  <div className="w-5 shrink-0 pt-0.5">
+                    {isProposed && (
+                      <input
+                        type="checkbox"
+                        checked={isApproved ?? false}
+                        onChange={() => onToggle(event.todo_id!)}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                    )}
                   </div>
-                  {entry.kind === "proposed" && (
-                    <div className="text-xs text-gray-400 mt-0.5">
-                      {entry.todoTitle && `${entry.todoTitle} · `}
-                      {entry.duration > 0 && formatDuration(entry.duration)}
+
+                  {/* Time */}
+                  <div className="w-28 shrink-0 text-xs text-gray-500 pt-0.5">
+                    {formatTime(event.scheduled_start)} – {formatTime(event.scheduled_end)}
+                  </div>
+
+                  {/* Title + badge */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-medium truncate ${titleColor}`}>
+                        {event.title}
+                      </span>
+                      <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${badgeStyle}`}>
+                        {badgeLabel}
+                      </span>
                     </div>
-                  )}
+                    {duration > 0 && (
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {formatDuration(duration)}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -892,12 +832,12 @@ function SuccessView({
                 `${review.rescheduled} rescheduled`}
             </p>
           )}
-          {planResult.items_created > 0 && (
+          {planResult.todos_scheduled > 0 && (
             <p>
-              {planResult.items_created} item{planResult.items_created !== 1 ? "s" : ""}{" "}
+              {planResult.todos_scheduled} todo{planResult.todos_scheduled !== 1 ? "s" : ""}{" "}
               scheduled
-              {planResult.events_created > 0 &&
-                ` with ${planResult.events_created} calendar event${planResult.events_created !== 1 ? "s" : ""}`}
+              {planResult.calendar_events_created > 0 &&
+                ` with ${planResult.calendar_events_created} calendar event${planResult.calendar_events_created !== 1 ? "s" : ""}`}
             </p>
           )}
         </div>

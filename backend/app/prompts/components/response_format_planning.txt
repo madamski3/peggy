@@ -16,7 +16,10 @@ When presenting a daily plan, use this structured_payload format:
 ```json
 {
   "type": "daily_plan",
-  "existing_events": [{"title": "...", "start": "ISO", "end": "ISO"}],
-  "plan_items": [{"todo_id": "uuid", "tasks": [{"title": "...", "scheduled_start": "ISO", "scheduled_end": "ISO", "estimated_duration_minutes": 60}], "create_calendar_events": true}]
+  "date": "YYYY-MM-DD",
+  "events": [
+    {"title": "...", "scheduled_start": "ISO", "scheduled_end": "ISO", "todo_id": "uuid or null", "proposed": true}
+  ]
 }
 ```
+Each event has: proposed=true for newly proposed todos, proposed=false for existing calendar events or already-scheduled todos. todo_id is null for calendar-only events.
