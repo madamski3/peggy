@@ -19,6 +19,7 @@ import anthropic
 from anthropic import AsyncAnthropic
 
 from app.config import settings
+from app.globals import AGENT_DEFAULT_EFFORT, AGENT_DEFAULT_MAX_TOKENS, ANTHROPIC_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +64,8 @@ async def call_llm(
     messages: list[dict],
     system: str,
     tools: list[dict],
-    max_tokens: int = 16000,
-    effort: str | None = "medium",
+    max_tokens: int = AGENT_DEFAULT_MAX_TOKENS,
+    effort: str | None = AGENT_DEFAULT_EFFORT,
 ) -> anthropic.types.Message:
     """Call the Anthropic Messages API with tool definitions.
 
@@ -99,7 +100,7 @@ async def call_llm(
     cached_messages = _with_cache_control(messages)
 
     kwargs: dict = dict(
-        model=settings.anthropic_model,
+        model=ANTHROPIC_MODEL,
         max_tokens=max_tokens,
         system=cached_system,
         messages=cached_messages,

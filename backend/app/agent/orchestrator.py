@@ -37,7 +37,7 @@ from app.agent.tools.registry import (
     get_tool_schemas_for_names,
 )
 from app.agent.tool_selector import select_tools
-from app.config import settings
+from app.globals import AGENT_MAX_TOOL_ROUNDS
 from app.prompts.composer import compose_prompt
 from app.schemas.agent import (
     ActionTaken,
@@ -137,7 +137,7 @@ async def run_agent_loop(
     }
     final_text = ""
 
-    for round_num in range(settings.agent_max_tool_rounds):
+    for round_num in range(AGENT_MAX_TOOL_ROUNDS):
         logger.info(f"Agent loop round {round_num + 1}")
 
         response = await call_llm(
@@ -227,7 +227,7 @@ async def run_agent_loop(
             break
     else:
         # Exhausted max rounds
-        logger.warning(f"Agent loop hit max rounds ({settings.agent_max_tool_rounds})")
+        logger.warning(f"Agent loop hit max rounds ({AGENT_MAX_TOOL_ROUNDS})")
         final_text = _extract_text(response.content) if response else ""
 
     # Append the final assistant response so the chain is complete

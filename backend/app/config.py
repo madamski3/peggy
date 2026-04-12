@@ -12,8 +12,6 @@ class Settings(BaseSettings):
 
     # Anthropic API
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-6"
-    agent_max_tool_rounds: int = 10
 
     # Google Calendar OAuth
     google_client_id: str = ""
@@ -30,21 +28,11 @@ class Settings(BaseSettings):
     # ntfy push notifications
     ntfy_base_url: str = "http://ntfy:80"
     ntfy_topic: str = "assistant"
-    notification_poll_seconds: int = 30
 
-    # Timezone
-    default_timezone: str = "America/Los_Angeles"
-
-    # Proactive job schedules
+    # Proactive job feature flags
     morning_briefing_enabled: bool = True
-    morning_briefing_default_hour: int = 7
-    morning_briefing_default_minute: int = 0
     deadline_warning_enabled: bool = True
-    deadline_warning_hour: int = 10
-    deadline_warning_days_ahead: int = 3
     key_date_alert_enabled: bool = True
-    key_date_alert_hour: int = 9
-    key_date_alert_days_ahead: int = 7
 
     model_config = {"env_file": ".env"}
 

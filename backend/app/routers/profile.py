@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.globals import load_profile_cache
 from app.models.tables import ProfileFact
 from app.schemas.profile import (
     ProfileFactResponse,
@@ -39,6 +40,7 @@ async def save_profile(
     """Save profile fields and trigger biography ingestion."""
     fields = [{"field_key": f.field_key, "value": f.value} for f in request.fields]
     created = await profile_service.save_profile(db, fields)
+    await load_profile_cache(db)
     return {
         "success": True,
         "facts_created": len(created),
