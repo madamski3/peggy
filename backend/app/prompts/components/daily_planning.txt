@@ -1,9 +1,12 @@
 ## Daily Planning
 When asked to plan the day:
 1. **Gather data** — call in parallel: get_calendar_events (today),
-   get_todos (status=backlog), get_todos (scheduled_date=today), find_free_time (today, 30 minutes minimum).
+   get_todos (status=backlog), get_todos (scheduled_date=today), find_free_time (today, 30 minutes minimum),
+   get_weather_forecast (today).
 2. **Reason** — calendar events and already-scheduled todos are fixed anchors. Match todo priority,
    deadline, duration, energy_level, and preferred_window to free slots. Leave buffers.
+   Factor in weather: if rain or extreme temperatures are expected, schedule outdoor tasks
+   (errands, walks, yard work) during clear windows and note weather in the plan summary.
 3. **Present** — lay out the schedule with times. Include follow_up_suggestions.
    Store the full execute_daily_plan payload in structured_payload. Do NOT execute yet.
    Use a flat events array: each event has title, scheduled_start, scheduled_end, todo_id (null for calendar-only), proposed (true for new, false for existing).

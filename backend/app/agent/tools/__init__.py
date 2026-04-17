@@ -15,4 +15,5 @@ from app.agent.tools import (  # noqa: F401
     profile_tools,
     reminder_tools,
     todo_tools,
+    weather_tools,
 )

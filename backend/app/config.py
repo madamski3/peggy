@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     ntfy_base_url: str = "http://ntfy:80"
     ntfy_topic: str = "assistant"
 
+    # Weather (Open-Meteo — no API key needed)
+    # Default: Vancouver, WA
+    default_latitude: float = 45.6387
+    default_longitude: float = -122.6615
+
     # Proactive job feature flags
     morning_briefing_enabled: bool = True
     deadline_warning_enabled: bool = True
