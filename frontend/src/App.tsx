@@ -6,6 +6,7 @@ import PeoplePage from "./components/people/PeoplePage";
 import PersonDetailForm from "./components/people/PersonDetailForm";
 import TodosPage from "./components/todos/TodosPage";
 import PlanningPage from "./components/planning/PlanningPage";
+import CalendarPage from "./components/calendar/CalendarPage";
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
       <NavBar />
       <Routes>
         <Route path="/" element={<ChatPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
         <Route
           path="*"
           element={

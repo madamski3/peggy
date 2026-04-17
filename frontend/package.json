@@ -9,10 +9,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fullcalendar/core": "^6.1.20",
+    "@fullcalendar/daygrid": "^6.1.20",
+    "@fullcalendar/list": "^6.1.20",
+    "@fullcalendar/react": "^6.1.20",
+    "@fullcalendar/timegrid": "^6.1.20",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-router-dom": "^7.6.1",
-    "react-hook-form": "^7.57.0"
+    "react-hook-form": "^7.57.0",
+    "react-router-dom": "^7.6.1"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",

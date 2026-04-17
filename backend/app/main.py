@@ -32,7 +32,7 @@ from app.globals import (
     get_cached_timezone,
     load_profile_cache,
 )
-from app.routers import auth, chat, health, people, planning, profile, todos
+from app.routers import auth, calendar, chat, health, people, planning, profile, todos
 from app.services.notifications import process_due_notifications
 from app.services.scheduled_jobs import (
     deadline_warning_scan,
@@ -128,3 +128,4 @@ app.include_router(chat.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(todos.router, prefix="/api")
 app.include_router(planning.router, prefix="/api")
+app.include_router(calendar.router, prefix="/api")
