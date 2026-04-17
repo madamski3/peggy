@@ -227,9 +227,10 @@ TODO TOOLS (Planning Layer)
 │                  tags?, location?, parent_todo_id?)
 │   → Creates a todo in the backlog (status: backlog)
 ├── update_todo(todo_id, fields_to_update)
-│   → Updates todo fields (priority, deadline, tags, etc.)
-├── complete_todo(todo_id)
-│   → Marks todo complete (verifies all tasks are done or cancels remaining)
+│   → Updates todo fields (priority, deadline, tags, status, schedule, etc.)
+│   → Setting status to "completed" cascades to children and auto-completes parent
+│   → Setting status to "cancelled" deletes the calendar event
+│   → Changing schedule on a scheduled todo increments deferred_count
 ├── get_todo_detail(todo_id)
 │   → Returns todo with all tasks, progress, notes
 └── create_todo_with_task(title, description?, priority?, scheduled_start,
@@ -293,9 +294,7 @@ CONVERSATION TOOLS
 CALENDAR TOOLS
 ├── get_calendar_events(date_start, date_end)
 │   → Returns events in the date range
-├── create_calendar_event(title, start, end, description?, color?)
-│   → Creates an event with assistant metadata tag
-│   → Auto-applies assistant color + created_by marker
+│   (Calendar events are created automatically when todos are scheduled)
 ├── update_calendar_event(event_id, fields_to_update)
 │   → Updates an event; checks if assistant-created for action tier
 ├── delete_calendar_event(event_id)
@@ -362,7 +361,6 @@ def classify_action(tool_name: str, tool_args: dict) -> ActionTier:
         "create_todo",              # adding to backlog is low-stakes
         "update_todo",              # editing backlog metadata
         "complete_task",               # marking scheduled work done
-        "complete_todo",            # completing a todo
         "create_todo_with_task",    # reminders / simple items
         "add_list_item", "complete_list_item", "bulk_complete_list_items",
         "create_list", "add_profile_fact", "update_profile_fact",
@@ -390,10 +388,6 @@ def classify_action(tool_name: str, tool_args: dict) -> ActionTier:
             return ActionTier.LOW_STAKES
         else:
             return ActionTier.HIGH_STAKES
-
-    # create_calendar_event: low-stakes individually, but see batch handling (3.5)
-    if tool_name == "create_calendar_event":
-        return ActionTier.LOW_STAKES
 
     # Individual task creation: low-stakes if standalone,
     # but typically tasks are created via create_tasks_batch (high-stakes)

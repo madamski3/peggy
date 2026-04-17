@@ -319,7 +319,7 @@ This is the most important data model. A todo has a lifecycle: `backlog -> sched
 
 **Calendar sync** (`services/todos.py: _sync_calendar`): Any time a todo's scheduled times change, this runs automatically. Times added with no event creates one; times changed updates it; times cleared deletes it. The calendar is always in sync.
 
-**Status cascading** (`services/todos.py: complete_todo` + `_maybe_update_parent_status`): Completion cascades in both directions. Completing a parent auto-cancels unfinished children. If all siblings of a parent are completed/cancelled, the parent auto-completes. The upward cascade walks the parent chain, so it works at any depth.
+**Status cascading** (`services/todos.py: update_todo` + `_maybe_update_parent_status`): Setting a todo's status to "completed" via `update_todo` cascades in both directions. Completing a parent auto-completes unfinished children. If all siblings of a parent are completed/cancelled, the parent auto-completes. The upward cascade walks the parent chain, so it works at any depth.
 
 **LLM observability** (`services/conversations.py: log_llm_call`): Every API call to Claude is recorded with token usage (input, output, thinking, cache read, cache creation), estimated cost in USD, and the full raw API response (thinking text redacted for size).
 

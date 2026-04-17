@@ -11,12 +11,14 @@ Status lifecycle:
 
 Key behaviors:
   - create_todo() starts in "backlog" unless scheduled times are provided
-  - complete_todo() cascades down (cancels unfinished children) and up
-    (auto-completes parent if all siblings are done)
+  - update_todo() handles all field updates and status transitions:
+    completion cascades down/up, cancellation deletes calendar events,
+    rescheduling increments deferred_count
+  - complete_todo() / cancel_todo() / reschedule_todo() remain as direct
+    service functions for internal callers (e.g. planning router)
   - _sync_calendar() ensures calendar events stay in sync with scheduling
   - _maybe_update_parent_status() propagates status changes up the hierarchy
   - create_child_todos_batch() creates multiple children under a parent
-  - reschedule_todo() updates times + syncs calendar + increments deferred_count
 
 Called by the agent tools (todo_tools.py) and REST routers.
 """
@@ -117,7 +119,6 @@ async def create_todo(db: AsyncSession, **kwargs: Any) -> dict:
         parent_todo_id=_parse_uuid(kwargs.get("parent_todo_id")),
         scheduled_start=_parse_dt(kwargs.get("scheduled_start")),
         scheduled_end=_parse_dt(kwargs.get("scheduled_end")),
-        position=kwargs.get("position"),
         created_by="assistant",
     )
     db.add(todo)
@@ -135,17 +136,41 @@ async def create_todo(db: AsyncSession, **kwargs: Any) -> dict:
 async def update_todo(
     db: AsyncSession, todo_id: str | uuid.UUID, fields: dict[str, Any]
 ) -> dict | None:
-    """Partial update of a todo's mutable fields."""
-    todo = await _get_todo(db, todo_id)
+    """Partial update of a todo's mutable fields.
+
+    Handles status transitions automatically:
+      - Setting status to "completed" cascades completion to children,
+        deletes calendar events, and propagates upward to parents.
+      - Setting status to "cancelled" deletes the calendar event.
+      - Changing scheduled times on an already-scheduled todo increments
+        deferred_count (reschedule tracking).
+    """
+    new_status = fields.get("status")
+    completing = new_status == "completed"
+
+    # If completing, eagerly load children for the downward cascade.
+    if completing:
+        result = await db.execute(
+            select(Todo)
+            .options(selectinload(Todo.children))
+            .where(Todo.id == _parse_uuid(todo_id))
+        )
+        todo = result.scalar_one_or_none()
+    else:
+        todo = await _get_todo(db, todo_id)
     if todo is None:
         return None
+
+    # Capture pre-update state for transition detection.
+    old_status = todo.status
+    old_scheduled_start = todo.scheduled_start
 
     updatable = {
         "title", "description", "status", "priority", "deadline",
         "target_date", "preferred_window", "estimated_duration_minutes",
         "energy_level", "location", "tags", "notes",
         "scheduled_start", "scheduled_end", "actual_duration_minutes",
-        "completion_notes", "position", "deferred_count",
+        "completion_notes", "deferred_count",
     }
 
     schedule_changed = False
@@ -157,7 +182,32 @@ async def update_todo(
                 schedule_changed = True
             setattr(todo, key, value)
 
-    todo.updated_at = datetime.now(timezone.utc)
+    # ── Status transition side-effects ──────────────────────────
+    now = datetime.now(timezone.utc)
+
+    if completing and old_status != "completed":
+        todo.completed_at = now
+        # Cascade DOWN: complete unfinished children.
+        for child in todo.children:
+            if child.status not in ("completed", "cancelled"):
+                child.status = "completed"
+                child.completed_at = now
+                child.updated_at = now
+                if child.calendar_event_id:
+                    await _delete_calendar_event(db, child)
+        # Delete own calendar event.
+        if todo.calendar_event_id:
+            await _delete_calendar_event(db, todo)
+
+    elif new_status == "cancelled" and old_status != "cancelled":
+        if todo.calendar_event_id:
+            await _delete_calendar_event(db, todo)
+
+    # ── Reschedule detection ────────────────────────────────────
+    if schedule_changed and old_scheduled_start is not None:
+        todo.deferred_count = (todo.deferred_count or 0) + 1
+
+    todo.updated_at = now
     await db.flush()
 
     if schedule_changed:
@@ -364,7 +414,6 @@ async def create_child_todos_batch(
             scheduled_start=_parse_dt(cd.get("scheduled_start")),
             scheduled_end=_parse_dt(cd.get("scheduled_end")),
             estimated_duration_minutes=cd.get("estimated_duration_minutes"),
-            position=cd.get("position", i),
             created_by="assistant",
         )
         db.add(child)
@@ -400,7 +449,7 @@ async def _sync_calendar(db: AsyncSession, todo: Todo) -> None:
     """Ensure the todo's calendar event is in sync with its scheduled times.
 
     - Times present + no event → create event
-    - Times present + event exists → update event
+    - Times present + event exists → update event (re-create if stale)
     - Times cleared + event exists → delete event
     """
     from app.services.google_calendar import create_event, update_event
@@ -408,36 +457,71 @@ async def _sync_calendar(db: AsyncSession, todo: Todo) -> None:
     has_times = todo.scheduled_start and todo.scheduled_end
 
     if has_times and not todo.calendar_event_id:
-        # Create new calendar event
-        try:
-            result = await create_event(
-                db,
-                summary=todo.title,
-                start=todo.scheduled_start.isoformat(),
-                end=todo.scheduled_end.isoformat(),
-                description=todo.description or "",
-            )
-            if "error" not in result:
-                todo.calendar_event_id = result.get("id")
-                await db.flush()
-        except Exception:
-            logger.warning("Failed to create calendar event for todo %s", todo.id)
+        await _create_calendar_event(db, todo)
 
     elif has_times and todo.calendar_event_id:
-        # Update existing calendar event
+        # Update existing calendar event; if it no longer exists on
+        # Google's side, clear the stale ID and create a fresh one.
         try:
-            await update_event(
+            result = await update_event(
                 db,
                 event_id=todo.calendar_event_id,
                 summary=todo.title,
                 start=todo.scheduled_start.isoformat(),
                 end=todo.scheduled_end.isoformat(),
             )
+            if "error" in result:
+                logger.warning(
+                    "Calendar update returned error for todo %s (event %s): %s — recreating",
+                    todo.id, todo.calendar_event_id, result["error"],
+                )
+                todo.calendar_event_id = None
+                await db.flush()
+                await _create_calendar_event(db, todo)
         except Exception:
-            logger.warning("Failed to update calendar event for todo %s", todo.id)
+            logger.warning(
+                "Calendar update failed for todo %s (event %s) — clearing stale ID and recreating",
+                todo.id, todo.calendar_event_id, exc_info=True,
+            )
+            todo.calendar_event_id = None
+            await db.flush()
+            await _create_calendar_event(db, todo)
 
     elif not has_times and todo.calendar_event_id:
         await _delete_calendar_event(db, todo)
+
+
+async def _create_calendar_event(db: AsyncSession, todo: Todo) -> None:
+    """Create a calendar event for a todo and store the event ID."""
+    from app.services.google_calendar import create_event
+
+    try:
+        result = await create_event(
+            db,
+            summary=todo.title,
+            start=todo.scheduled_start.isoformat(),
+            end=todo.scheduled_end.isoformat(),
+            description=todo.description or "",
+        )
+        if "error" in result:
+            logger.error(
+                "Calendar create returned error for todo %s: %s",
+                todo.id, result["error"],
+            )
+            return
+        event_id = result.get("id")
+        if not event_id:
+            logger.error(
+                "Calendar create returned no event ID for todo %s: %s",
+                todo.id, result,
+            )
+            return
+        todo.calendar_event_id = event_id
+        await db.flush()
+    except Exception:
+        logger.error(
+            "Failed to create calendar event for todo %s", todo.id, exc_info=True,
+        )
 
 
 async def _delete_calendar_event(db: AsyncSession, todo: Todo) -> None:

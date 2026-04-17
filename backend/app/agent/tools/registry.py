@@ -85,8 +85,8 @@ CATEGORY_DESCRIPTIONS: dict[str, str] = {
         "calendar sync. Supports hierarchy (parent/child) for decomposition."
     ),
     "calendar": (
-        "Google Calendar: list events, create/update/delete events, find free time slots "
-        "in a date range."
+        "Google Calendar: list events, update/delete events, find free time slots "
+        "in a date range. Calendar events are created automatically when todos are scheduled."
     ),
     "planning": (
         "Daily planning: batch-schedule todos with calendar events for an entire "
@@ -123,6 +123,7 @@ _GENERAL_TOOLS: set[str] = {
     "get_lists",
     "search_conversations",
     "get_recent_emails",
+    "wiki_search",
 }
 
 

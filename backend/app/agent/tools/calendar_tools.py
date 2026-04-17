@@ -6,10 +6,13 @@ unpacks kwargs, calls the service, and returns a JSON-serializable dict.
 
 Registered tools:
   - get_calendar_events  (READ_ONLY)  -- list events in a time range
-  - create_calendar_event (LOW_STAKES) -- create an event, tagged as assistant-created
   - update_calendar_event (LOW_STAKES) -- partial update of an existing event
   - delete_calendar_event (HIGH_STAKES) -- irreversible deletion, requires confirmation
   - find_free_time        (READ_ONLY)  -- find gaps between events
+
+Calendar events are created automatically when todos are scheduled (via
+todo_tools.create_todo with scheduled_start/scheduled_end). These tools
+handle read/update/delete of existing events, including non-assistant events.
 """
 
 from typing import Any
@@ -34,17 +37,6 @@ async def handle_get_calendar_events(db: AsyncSession, **kwargs: Any) -> dict:
         return events
     return {"events": events, "count": len(events)}
 
-
-async def handle_create_calendar_event(db: AsyncSession, **kwargs: Any) -> dict:
-    return await google_calendar.create_event(
-        db,
-        summary=kwargs["summary"],
-        start=kwargs["start"],
-        end=kwargs["end"],
-        description=kwargs.get("description", ""),
-        location=kwargs.get("location", ""),
-        all_day=kwargs.get("all_day", False),
-    )
 
 
 async def handle_update_calendar_event(db: AsyncSession, **kwargs: Any) -> dict:
@@ -95,32 +87,6 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.READ_ONLY,
     handler=handle_get_calendar_events,
-    category="calendar",
-))
-
-
-register_tool(ToolDefinition(
-    name="create_calendar_event",
-    description="Create a Google Calendar event, tagged as assistant-created.",
-    embedding_text=(
-        "calendar: create_calendar_event — create, add, schedule, book a calendar event, "
-        "meeting, appointment, block time. Put this on my calendar. "
-        "Schedule a meeting with John at 3pm. Block off Friday afternoon."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string"},
-            "start": {"type": "string", "description": "ISO 8601 datetime or date for all-day."},
-            "end": {"type": "string", "description": "ISO 8601 datetime or date for all-day."},
-            "description": {"type": "string"},
-            "location": {"type": "string"},
-            "all_day": {"type": "boolean"},
-        },
-        "required": ["summary", "start", "end"],
-    },
-    tier=ActionTier.LOW_STAKES,
-    handler=handle_create_calendar_event,
     category="calendar",
 ))
 

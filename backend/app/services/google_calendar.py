@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.globals import CALENDAR_ASSISTANT_COLOR_ID, CALENDAR_ASSISTANT_TAG
+from app.globals import CALENDAR_ASSISTANT_COLOR_ID, CALENDAR_ASSISTANT_TAG, get_cached_timezone
 from app.models.tables import Credential
 from app.services.timezone import parse_dt
 
@@ -228,8 +228,8 @@ async def create_event(
         body["start"] = {"date": start}
         body["end"] = {"date": end}
     else:
-        body["start"] = {"dateTime": start, "timeZone": "America/Los_Angeles"}
-        body["end"] = {"dateTime": end, "timeZone": "America/Los_Angeles"}
+        body["start"] = {"dateTime": start, "timeZone": str(get_cached_timezone())}
+        body["end"] = {"dateTime": end, "timeZone": str(get_cached_timezone())}
 
     def _create(cal_id: str):
         service = _build_service(creds)
@@ -295,12 +295,12 @@ async def update_event(
             if "date" in event.get("start", {}):
                 event["start"] = {"date": start}
             else:
-                event["start"] = {"dateTime": start, "timeZone": "America/Los_Angeles"}
+                event["start"] = {"dateTime": start, "timeZone": str(get_cached_timezone())}
         if end is not None:
             if "date" in event.get("end", {}):
                 event["end"] = {"date": end}
             else:
-                event["end"] = {"dateTime": end, "timeZone": "America/Los_Angeles"}
+                event["end"] = {"dateTime": end, "timeZone": str(get_cached_timezone())}
 
         return service.events().update(
             calendarId=cal_id,
@@ -387,7 +387,7 @@ async def find_free_time(
         body = {
             "timeMin": time_min,
             "timeMax": time_max,
-            "timeZone": "America/Los_Angeles",
+            "timeZone": str(get_cached_timezone()),
             "items": [{"id": cal_id}],
         }
         result = service.freebusy().query(body=body).execute()

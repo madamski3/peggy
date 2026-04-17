@@ -6,12 +6,9 @@ scheduled calendar blocks, or parent items with children for decomposition.
 Registered tools:
   - get_todos           (READ_ONLY)  -- query todos by status/priority/deadline/tags/schedule
   - create_todo         (LOW_STAKES) -- add a new todo (backlog or scheduled)
-  - update_todo         (LOW_STAKES) -- partial update of todo fields
-  - complete_todo       (LOW_STAKES) -- mark done, cascades up/down
-  - cancel_todo         (LOW_STAKES) -- cancel, deletes calendar event
+  - update_todo         (LOW_STAKES) -- update fields, complete, cancel, or reschedule
   - get_todo_detail     (READ_ONLY)  -- full todo with all its children
   - create_sub_todos    (HIGH_STAKES)-- create multiple children under a parent
-  - reschedule_todo     (LOW_STAKES) -- move to new time, sync calendar
 """
 
 from typing import Any
@@ -38,29 +35,22 @@ async def handle_create_todo(db: AsyncSession, **kwargs: Any) -> dict:
 async def handle_update_todo(db: AsyncSession, **kwargs: Any) -> dict:
     todo_id = kwargs.pop("todo_id")
     fields = kwargs.get("fields", kwargs)
+
+    # Route "backlog" status to the dedicated send_to_backlog service,
+    # which clears schedule, deletes calendar event, and increments deferred_count.
+    if fields.get("status") == "backlog":
+        result = await todo_service.send_to_backlog(
+            db, todo_id, notes=fields.get("completion_notes"),
+        )
+        if result is None:
+            return {"error": "Todo not found"}
+        return result
+
     result = await todo_service.update_todo(db, todo_id, fields)
     if result is None:
         return {"error": "Todo not found"}
     return result
 
-
-async def handle_complete_todo(db: AsyncSession, **kwargs: Any) -> dict:
-    result = await todo_service.complete_todo(
-        db,
-        kwargs["todo_id"],
-        actual_duration_minutes=kwargs.get("actual_duration_minutes"),
-        completion_notes=kwargs.get("completion_notes"),
-    )
-    if result is None:
-        return {"error": "Todo not found"}
-    return result
-
-
-async def handle_cancel_todo(db: AsyncSession, **kwargs: Any) -> dict:
-    result = await todo_service.cancel_todo(db, kwargs["todo_id"])
-    if result is None:
-        return {"error": "Todo not found"}
-    return result
 
 
 async def handle_get_todo_detail(db: AsyncSession, **kwargs: Any) -> dict:
@@ -76,17 +66,6 @@ async def handle_create_sub_todos(db: AsyncSession, **kwargs: Any) -> dict:
     )
     return {"children": results, "count": len(results)}
 
-
-async def handle_reschedule_todo(db: AsyncSession, **kwargs: Any) -> dict:
-    result = await todo_service.reschedule_todo(
-        db,
-        kwargs["todo_id"],
-        new_scheduled_start=kwargs.get("new_scheduled_start"),
-        new_scheduled_end=kwargs.get("new_scheduled_end"),
-    )
-    if result is None:
-        return {"error": "Todo not found"}
-    return result
 
 
 # ── Tool Definitions ─────────────────────────────────────────────
@@ -141,7 +120,8 @@ register_tool(ToolDefinition(
         "todo: create_todo — create, add, new todo, backlog item, project, goal, "
         "schedule, calendar. Add this to my todo list. I need to remember to do X. "
         "Create a todo for grocery shopping. Schedule Y for 2pm tomorrow. "
-        "Put Z on my calendar."
+        "Put Z on my calendar. Block off Friday afternoon. "
+        "Schedule a meeting with John at 3pm. Book a calendar event."
     ),
     input_schema={
         "type": "object",
@@ -158,7 +138,7 @@ register_tool(ToolDefinition(
             "tags": {"type": "array", "items": {"type": "string"}},
             "parent_todo_id": {"type": "string", "description": "UUID of parent todo for sub-todos."},
             "scheduled_start": {"type": "string", "description": "ISO datetime. If provided with scheduled_end, creates a scheduled todo with calendar event."},
-            "scheduled_end": {"type": "string", "description": "ISO datetime."},
+            "scheduled_end": {"type": "string", "description": "ISO datetime. Required if scheduled_start is provided."},
         },
         "required": ["title"],
     },
@@ -169,11 +149,27 @@ register_tool(ToolDefinition(
 
 register_tool(ToolDefinition(
     name="update_todo",
-    description="Update fields on an existing todo. Changing scheduled times syncs the calendar event.",
+    description=(
+        "Update fields on an existing todo. Handles all status transitions: "
+        "setting status to 'completed' cascades completion to children, deletes "
+        "calendar events, and auto-completes parent if all siblings are done. "
+        "Setting status to 'cancelled' deletes the calendar event. "
+        "Setting status to 'backlog' clears the schedule, deletes the calendar "
+        "event, and moves the todo back to the backlog. "
+        "Changing scheduled times on an already-scheduled todo tracks it as a reschedule. "
+        "Calendar events sync automatically with schedule changes."
+    ),
     embedding_text=(
         "todo: update_todo — edit, change, modify, update a todo's title, description, "
         "priority, deadline, tags, status, schedule. Change the priority to urgent. "
-        "Update the deadline. Add a tag. Move this to 4pm."
+        "Update the deadline. Add a tag. Move this to 4pm. "
+        "Complete, finish, done, mark todo as completed. I finished that project. "
+        "Mark grocery shopping as done. That task is done. "
+        "Cancel, remove, I don't need to do that anymore. "
+        "Reschedule, defer, postpone, push back to later. "
+        "I'll do that tomorrow instead. Push this to next week. "
+        "Move to backlog, unschedule, push this back, defer this, "
+        "remove from schedule, take this off the calendar."
     ),
     input_schema={
         "type": "object",
@@ -205,49 +201,6 @@ register_tool(ToolDefinition(
     },
     tier=ActionTier.LOW_STAKES,
     handler=handle_update_todo,
-    category="todo",
-))
-
-register_tool(ToolDefinition(
-    name="complete_todo",
-    description=(
-        "Mark a todo as completed. Cancels any unfinished children. "
-        "If all siblings of a parent are done, the parent auto-completes too."
-    ),
-    embedding_text=(
-        "todo: complete_todo — complete, finish, done, mark todo as completed. "
-        "I finished that project. Mark grocery shopping as done. That task is done."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "todo_id": {"type": "string"},
-            "actual_duration_minutes": {"type": "integer"},
-            "completion_notes": {"type": "string"},
-        },
-        "required": ["todo_id"],
-    },
-    tier=ActionTier.LOW_STAKES,
-    handler=handle_complete_todo,
-    category="todo",
-))
-
-register_tool(ToolDefinition(
-    name="cancel_todo",
-    description="Cancel a todo. Deletes its calendar event if one exists.",
-    embedding_text=(
-        "todo: cancel_todo — cancel, remove, delete a todo or scheduled item. "
-        "Cancel that. I don't need to do that anymore. Remove it from my calendar."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "todo_id": {"type": "string"},
-        },
-        "required": ["todo_id"],
-    },
-    tier=ActionTier.LOW_STAKES,
-    handler=handle_cancel_todo,
     category="todo",
 ))
 
@@ -303,23 +256,3 @@ register_tool(ToolDefinition(
     category="todo",
 ))
 
-register_tool(ToolDefinition(
-    name="reschedule_todo",
-    description="Reschedule a todo to a new time. Increments deferred count and syncs calendar.",
-    embedding_text=(
-        "todo: reschedule_todo — defer, postpone, push back, reschedule a todo to later. "
-        "I'll do that tomorrow instead. Push this to next week. Move it to 4pm."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "todo_id": {"type": "string"},
-            "new_scheduled_start": {"type": "string", "description": "ISO datetime."},
-            "new_scheduled_end": {"type": "string", "description": "ISO datetime."},
-        },
-        "required": ["todo_id"],
-    },
-    tier=ActionTier.LOW_STAKES,
-    handler=handle_reschedule_todo,
-    category="todo",
-))
