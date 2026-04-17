@@ -35,7 +35,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.client import call_llm
 from app.agent.context import assemble_context, build_conversation_messages, detect_intents
-from app.agent.planner import PlannerResult, run_planner
+from app.agent.planner import (
+    PLANNER_PROMPT_ID,
+    PlannerResult,
+    planner_component,
+    run_planner,
+)
 from app.agent.tools.registry import (
     ActionTier,
     TOOL_REGISTRY,
@@ -44,7 +49,7 @@ from app.agent.tools.registry import (
 )
 from app.agent.tool_selector import select_tools
 from app.globals import AGENT_MAX_TOOL_ROUNDS
-from app.prompts.composer import compose_prompt
+from app.prompts.composer import compose_and_persist_prompt, upsert_prompt_components
 from app.schemas.agent import (
     ActionTaken,
     ChatResponse,
@@ -100,6 +105,7 @@ async def run_agent_loop(
     confirmation_id: uuid.UUID | None = None,
     channel: str = "chat",
     status_callback: StatusCallback | None = None,
+    dry_run: bool = False,
 ) -> ChatResponse:
     """Run the full agent loop: context → LLM → tools → response.
 
@@ -113,6 +119,10 @@ async def run_agent_loop(
             for scheduler-triggered invocations.
         status_callback: Optional async function that receives status strings
             during the agent loop. Used by the SSE endpoint for streaming.
+        dry_run: If True, LOW_STAKES tool calls return synthetic results
+            instead of executing. READ_ONLY tools still run (Claude needs
+            real data) and HIGH_STAKES tools still halt for confirmation.
+            Used by the replay harness to iterate on prompts safely.
 
     Returns:
         A ChatResponse with spoken_summary, structured_payload, actions, etc.
@@ -141,7 +151,14 @@ async def run_agent_loop(
         select_tools(user_message, conversation_history),
     )
     if plan.raw_response:
-        await log_llm_call(db, session_id, 0, plan.raw_response)
+        await upsert_prompt_components(db, [planner_component()])
+        await log_llm_call(
+            db,
+            session_id,
+            0,
+            plan.raw_response,
+            prompt_component_ids=[PLANNER_PROMPT_ID],
+        )
     logger.info(f"Planner: effort={plan.result.effort}, components={plan.result.components}")
 
     if status_callback:
@@ -168,11 +185,14 @@ async def run_agent_loop(
 
     # ── Step A.3: Compose system prompt from relevant components ──
     context["strategy"] = plan.result.strategy
-    system_prompt = compose_prompt(
+    composed = await compose_and_persist_prompt(
+        db,
         context=context,
         planner_components=plan.result.components,
         channel=channel,
     )
+    system_prompt = composed.text
+    main_component_ids = [c.id for c in composed.components]
 
     # ── Step B: Build messages ──
     messages = build_conversation_messages(user_message, conversation_history)
@@ -206,7 +226,14 @@ async def run_agent_loop(
             effort=plan.result.effort,
         )
 
-        await log_llm_call(db, session_id, round_num + 1, response, tools=tools_meta)
+        await log_llm_call(
+            db,
+            session_id,
+            round_num + 1,
+            response,
+            tools=tools_meta,
+            prompt_component_ids=main_component_ids,
+        )
 
         # Check if Claude refused the request
         if response.stop_reason == "refusal":
@@ -255,10 +282,14 @@ async def run_agent_loop(
                         )
                         return chat_response
 
-                    # Execute the tool
+                    # Execute the tool (or mock it in dry-run for non-READ_ONLY)
                     try:
-                        handler = TOOL_REGISTRY[tool_name].handler
-                        result = await handler(db, **tool_input)
+                        if dry_run and tier != ActionTier.READ_ONLY:
+                            result = _mock_tool_result(tool_name, tool_input)
+                            logger.info(f"[dry_run] Mocked {tool_name} -> {result}")
+                        else:
+                            handler = TOOL_REGISTRY[tool_name].handler
+                            result = await handler(db, **tool_input)
                     except Exception as e:
                         logger.error(f"Tool {tool_name} failed: {e}")
                         result = {"error": str(e)}
@@ -546,6 +577,37 @@ def _build_confirmation_summary(tool_name: str, tool_args: dict) -> str:
     return "I need your confirmation before proceeding with this action."
 
 
+def _mock_tool_result(tool_name: str, tool_input: dict) -> dict:
+    """Return a plausible mock result for dry-run mode.
+
+    Echoes the inputs with a fake id and a `mocked` flag, plus any fields
+    `_summarize_result` or Claude expects to see in a real response for
+    common LOW_STAKES tools. Unknown tools still get a generic echo —
+    enough to let Claude continue reasoning without hitting the DB or
+    external services.
+    """
+    base: dict = {**tool_input, "id": f"mock-{uuid.uuid4()}", "mocked": True}
+
+    if tool_name in {"create_todo", "update_todo", "set_reminder"}:
+        base.setdefault("title", tool_input.get("title", "mocked-todo"))
+        base.setdefault(
+            "status",
+            "scheduled" if tool_input.get("scheduled_start") else "backlog",
+        )
+    if tool_name in {"create_list", "add_list_item", "complete_list_item"}:
+        base.setdefault("name", tool_input.get("name", "mocked-item"))
+    if tool_name == "bulk_complete_list_items":
+        items = tool_input.get("items") or tool_input.get("item_ids") or []
+        base["completed_count"] = len(items) or 1
+    if tool_name in {"add_profile_fact", "update_profile_fact"}:
+        base.setdefault("category", tool_input.get("category", "unknown"))
+        base.setdefault("key", tool_input.get("key", "unknown"))
+    if tool_name == "update_calendar_event":
+        base.setdefault("summary", tool_input.get("summary", "mocked-event"))
+
+    return base
+
+
 def _summarize_result(tool_name: str, result: dict) -> str:
     """Generate a brief summary of a tool execution result."""
     if "error" in result:
@@ -553,12 +615,14 @@ def _summarize_result(tool_name: str, result: dict) -> str:
 
     if tool_name == "create_todo":
         return f"Created todo: {result.get('title', 'untitled')}"
-    if tool_name == "complete_todo":
-        return f"Completed todo: {result.get('title', 'untitled')}"
-    if tool_name == "cancel_todo":
-        return f"Cancelled todo: {result.get('title', 'untitled')}"
-    if tool_name == "reschedule_todo":
-        return f"Rescheduled todo: {result.get('title', 'untitled')}"
+    if tool_name == "update_todo":
+        title = result.get("title", "untitled")
+        status = result.get("status")
+        if status == "completed":
+            return f"Completed todo: {title}"
+        if status == "cancelled":
+            return f"Cancelled todo: {title}"
+        return f"Updated todo: {title}"
     if tool_name == "create_sub_todos":
         return f"Created {result.get('count', 0)} sub-items"
     if tool_name == "set_reminder":
@@ -575,8 +639,6 @@ def _summarize_result(tool_name: str, result: dict) -> str:
         return f"Added fact: {result.get('category', '?')}.{result.get('key', '?')}"
     if tool_name == "update_profile_fact":
         return f"Updated fact: {result.get('category', '?')}.{result.get('key', '?')}"
-    if tool_name == "create_calendar_event":
-        return f"Created calendar event: {result.get('summary', 'untitled')}"
     if tool_name == "update_calendar_event":
         return f"Updated calendar event: {result.get('summary', 'untitled')}"
     if tool_name == "delete_calendar_event":

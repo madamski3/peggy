@@ -9,6 +9,7 @@ The planner focuses purely on strategy — what approach the main LLM should
 take, injected via the {{ strategy }} variable in system_v2.yaml.
 """
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -19,6 +20,7 @@ from pydantic import BaseModel
 from app.agent.client import get_client
 from app.agent.context import build_conversation_messages
 from app.globals import PLANNER_MAX_TOKENS, PLANNER_MODEL
+from app.prompts.composer import ActiveComponent
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,22 @@ Available components:
 - "daily_planning": User wants to plan their day, review their daily plan, or schedule their agenda
 - "schedule_overview": User is asking about their schedule, calendar, or what's coming up
 """
+
+PLANNER_PROMPT_ID = hashlib.sha256(_PLANNER_SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+
+
+def planner_component() -> ActiveComponent:
+    """Return the planner system prompt as a versioned ActiveComponent.
+
+    Used by the orchestrator to upsert the planner prompt into the
+    prompt_components table and tag the planner's llm_calls row.
+    """
+    return ActiveComponent(
+        name="planner",
+        id=PLANNER_PROMPT_ID,
+        raw_text=_PLANNER_SYSTEM_PROMPT,
+        type="planner",
+    )
 
 
 class PlannerResult(BaseModel):

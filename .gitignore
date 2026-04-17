@@ -11,6 +11,8 @@ build/
 node_modules/
 frontend/dist/
 .vite/
+backend/evals/runs/
+backend/evals/scenarios/from_*.yaml
 backend/wiki/
 backend/tool_embedding_cache.json
 ntfy-data/

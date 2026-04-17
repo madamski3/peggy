@@ -6,6 +6,7 @@ This is the single source of truth for the database schema. The main groups:
     - ProfileFact     -- versioned user knowledge (with superseded_by chain)
     - SeedFieldVersion -- form field edit history (for diff detection in ingestion)
     - Person          -- contacts directory
+    - WikiPage        -- vector search index for the personal wiki
 
   Productivity:
     - Todo            -- backlog/scheduled items (supports hierarchy via parent_todo_id,
@@ -253,12 +254,25 @@ class LlmCall(Base):
     )
     raw_response: Mapped[dict | None] = mapped_column(JSONB)
     tools: Mapped[dict | None] = mapped_column(JSONB)
+    prompt_component_ids: Mapped[list | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()")
     )
 
     # Relationships
     interaction: Mapped["Interaction | None"] = relationship(back_populates="llm_calls")
+
+
+class PromptComponent(Base):
+    __tablename__ = "prompt_components"
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    type: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
 
 
 class FinancialAccount(Base):
@@ -344,6 +358,24 @@ class DailyPlan(Base):
         DateTime(timezone=True), server_default=text("now()")
     )
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WikiPage(Base):
+    __tablename__ = "wiki_pages"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    page_name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
+    last_compiled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now()")
+    )
 
 
 class ScheduledNotification(Base):

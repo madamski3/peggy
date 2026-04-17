@@ -6,6 +6,10 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://assistant:${DB_PASSWORD}@postgres-postgres-1/assistant
+    volumes:
+      - ./backend/wiki:/app/wiki
+      - ./backend/evals:/app/evals
+      - ./backend/app/prompts:/app/app/prompts
     networks:
       - server-network
 

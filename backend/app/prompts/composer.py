@@ -8,12 +8,24 @@ Assembles the system prompt from granular component files based on:
 
 Each component lives in prompts/components/*.txt and is rendered with
 Jinja2 for variable interpolation ({{ user_name }}, {{ strategy }}, etc.).
+
+Component versioning: every active component is content-hashed (SHA-256 of
+its raw pre-Jinja text) and returned alongside the rendered prompt so the
+orchestrator can tag the llm_calls row with an array of component ids.
+compose_and_persist_prompt upserts those versions into prompt_components
+so the hash-to-text mapping is browsable.
 """
 
+import hashlib
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 from jinja2 import Template
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.tables import PromptComponent
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +37,7 @@ _COMPOSITION_ORDER = [
     "current_context",
     "tool_guidance",
     "proactive_notification",
+    "wiki_review",
     "daily_planning",
     "schedule_overview",
     "strategy",
@@ -42,10 +55,37 @@ _RESPONSE_FORMAT_OVERRIDES = {
 }
 
 
+@dataclass(frozen=True)
+class ActiveComponent:
+    """A single prompt component active for one LLM call.
+
+    `id` is the hex SHA-256 of `raw_text` — hashing the pre-Jinja template
+    keeps the hash stable across requests where only context vars change.
+    """
+
+    name: str
+    id: str
+    raw_text: str
+    type: str = "component"
+
+
+@dataclass(frozen=True)
+class ComposedPrompt:
+    """Result of composing a system prompt from components."""
+
+    text: str
+    components: list[ActiveComponent]
+
+
 def _load_component(name: str) -> str:
     """Load a component file by name."""
     path = COMPONENTS_DIR / f"{name}.txt"
     return path.read_text()
+
+
+def _hash_text(text: str) -> str:
+    """Hex SHA-256 of a string."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _select_components(
@@ -62,6 +102,8 @@ def _select_components(
     # Channel-based
     if channel == "proactive":
         active.add("proactive_notification")
+    elif channel == "wiki_review":
+        active.add("wiki_review")
 
     # Planner-selected (validated against known set)
     for name in planner_components:
@@ -91,8 +133,11 @@ def compose_prompt(
     context: dict,
     planner_components: list[str],
     channel: str = "chat",
-) -> str:
+) -> ComposedPrompt:
     """Compose the system prompt from relevant components.
+
+    Pure — no I/O. Call `compose_and_persist_prompt` instead from production
+    code paths that need the component versions persisted.
 
     Args:
         context: Template variables (current_datetime, timezone, user_name,
@@ -101,15 +146,70 @@ def compose_prompt(
         channel: Interaction channel — "chat" or "proactive".
 
     Returns:
-        The fully rendered system prompt string.
+        ComposedPrompt with the rendered text and the ordered list of
+        ActiveComponent records that made it up.
     """
-    components = _select_components(context, planner_components, channel)
-    logger.info("Prompt components: %s", components)
+    names = _select_components(context, planner_components, channel)
+    logger.info("Prompt components: %s", names)
 
-    sections = []
-    for name in components:
+    sections: list[str] = []
+    components: list[ActiveComponent] = []
+    for name in names:
         raw = _load_component(name)
         rendered = Template(raw).render(**context)
         sections.append(rendered)
+        components.append(
+            ActiveComponent(
+                name=name,
+                id=_hash_text(raw),
+                raw_text=raw,
+                type="component",
+            )
+        )
 
-    return "\n\n".join(sections)
+    return ComposedPrompt(
+        text="\n\n".join(sections),
+        components=components,
+    )
+
+
+async def upsert_prompt_components(
+    db: AsyncSession,
+    components: list[ActiveComponent],
+) -> None:
+    """Insert any new component versions; no-op on id conflicts.
+
+    Safe to call redundantly — ON CONFLICT DO NOTHING means repeated hits
+    with the same id are cheap and idempotent.
+    """
+    if not components:
+        return
+    rows = [
+        {
+            "id": c.id,
+            "name": c.name,
+            "type": c.type,
+            "prompt_text": c.raw_text,
+        }
+        for c in components
+    ]
+    stmt = pg_insert(PromptComponent).values(rows)
+    stmt = stmt.on_conflict_do_nothing(index_elements=["id"])
+    await db.execute(stmt)
+
+
+async def compose_and_persist_prompt(
+    db: AsyncSession,
+    context: dict,
+    planner_components: list[str],
+    channel: str = "chat",
+) -> ComposedPrompt:
+    """Compose the system prompt AND persist its component versions.
+
+    This is what production callers should use. `compose_prompt` is kept
+    pure for unit tests and for code paths that want to inspect a prompt
+    without writing anything.
+    """
+    composed = compose_prompt(context, planner_components, channel)
+    await upsert_prompt_components(db, composed.components)
+    return composed

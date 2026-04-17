@@ -1,0 +1,13 @@
+# Minimal smoke test for the replay harness.
+# Delete this file (or leave it) once you start adding real scenarios.
+
+- id: simple_time_query
+  user_message: "What time is it?"
+  expect:
+    confirmation_required: false
+
+- id: create_a_todo
+  user_message: "Remind me to buy eggs tomorrow"
+  expect:
+    tools_called_any_of: ["create_todo", "set_reminder"]
+    confirmation_required: false

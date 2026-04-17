@@ -114,6 +114,7 @@ async def log_llm_call(
     round_number: int,
     response: anthropic.types.Message,
     tools: dict | None = None,
+    prompt_component_ids: list[str] | None = None,
 ) -> LlmCall:
     """Persist metadata from a single LLM API call."""
     usage = response.usage
@@ -151,6 +152,7 @@ async def log_llm_call(
         estimated_cost_usd=round(cost, 6),
         raw_response=raw,
         tools=tools,
+        prompt_component_ids=prompt_component_ids,
     )
     db.add(llm_call)
     await db.flush()
