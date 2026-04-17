@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     morning_briefing_enabled: bool = True
     deadline_warning_enabled: bool = True
     key_date_alert_enabled: bool = True
+    nightly_wiki_review_enabled: bool = True
 
     model_config = {"env_file": ".env"}
 

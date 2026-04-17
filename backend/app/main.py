@@ -38,6 +38,7 @@ from app.services.scheduled_jobs import (
     deadline_warning_scan,
     key_date_alerts,
     morning_briefing,
+    nightly_wiki_review,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,11 +87,19 @@ async def lifespan(app: FastAPI):
             args=[async_session_maker],
             id="key_date_alerts",
         )
+    if settings.nightly_wiki_review_enabled:
+        scheduler.add_job(
+            nightly_wiki_review,
+            CronTrigger(hour=23, minute=0, timezone=user_tz),
+            args=[async_session_maker],
+            id="nightly_wiki_review",
+        )
     scheduler.start()
     logger.info("Scheduler started (notification poll + %d proactive jobs)",
                 sum([settings.morning_briefing_enabled,
                      settings.deadline_warning_enabled,
-                     settings.key_date_alert_enabled]))
+                     settings.key_date_alert_enabled,
+                     settings.nightly_wiki_review_enabled]))
     yield
     # Shutdown
     scheduler.shutdown()

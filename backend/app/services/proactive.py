@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 async def invoke_agent_proactively(
     session_factory: async_sessionmaker,
     synthetic_message: str,
+    channel: str = "proactive",
 ) -> dict | None:
     """Run the agent loop with a synthetic message and return the response.
 
@@ -33,7 +34,7 @@ async def invoke_agent_proactively(
                 user_message=synthetic_message,
                 session_id=None,
                 db=db,
-                channel="proactive",
+                channel=channel,
             )
             return response.model_dump(mode="json")
     except Exception:

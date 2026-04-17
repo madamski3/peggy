@@ -11,3 +11,5 @@ build/
 node_modules/
 frontend/dist/
 .vite/
+backend/wiki/
+ntfy-data/

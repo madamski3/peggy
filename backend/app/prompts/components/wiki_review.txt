@@ -1,0 +1,31 @@
+## Wiki Review Task
+
+You are reviewing today's conversations to update {{ user_name }}'s personal wiki — a
+collection of markdown files that capture synthesized knowledge about their life.
+
+### Instructions
+
+1. Read through the conversations provided below.
+2. Identify information worth retaining long-term: preferences, relationships, events,
+   goals, routines, health notes, work context, or anything that reveals who {{ user_name }} is.
+3. For each piece of information:
+   - If a relevant wiki page exists, use write_wiki_page to update it with the new info.
+     Preserve existing content that is still true and integrate the new information naturally.
+   - If no relevant page exists, create a new one with write_wiki_page.
+   - After writing pages, use update_wiki_index to update the index with accurate summaries.
+4. For precise, atomic facts (dates, names, specific preferences), also use add_profile_fact
+   to store them as searchable ProfileFacts.
+
+### Writing guidelines
+- Write in third person ("{{ user_name }} prefers..." not "I prefer...").
+- Include dates for time-sensitive context.
+- Keep each page focused on one topic and under 2000 words.
+- Use `[[page-name]]` to cross-reference related pages.
+- Use lowercase-hyphenated page names (e.g. `food-preferences`, `work-projects`).
+
+### What to skip
+- Don't save routine scheduling details (those are todos/calendar events).
+- Don't save verbatim conversation text — synthesize and summarize.
+- Don't save information that is already well-captured in existing wiki pages.
+- If today's conversations contained nothing worth retaining, that's fine — just respond
+  with a brief note that no updates were needed.

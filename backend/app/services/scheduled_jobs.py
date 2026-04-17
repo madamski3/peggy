@@ -22,10 +22,13 @@ from app.globals import (
     KEY_DATE_ALERT_DAYS_AHEAD,
     get_cached_timezone,
 )
-from app.models.tables import Person
-from app.services import daily_plans
+from sqlalchemy import and_
+
+from app.models.tables import Interaction, Person
+from app.services import daily_plans, wiki as wiki_service
 from app.services.notifications import send_ntfy
 from app.services.proactive import invoke_agent_proactively
+from app.services.serialization import model_to_dict
 from app.services.todos import get_todos
 
 logger = logging.getLogger(__name__)
@@ -179,3 +182,80 @@ async def key_date_alerts(session_factory: async_sessionmaker) -> None:
         body=body,
     )
     logger.info("Key date alerts sent: %d", len(alerts))
+
+
+async def nightly_wiki_review(session_factory: async_sessionmaker) -> None:
+    """Review today's conversations and compile knowledge into the personal wiki.
+
+    Queries all interactions from today, formats them into a summary, and
+    invokes the agent with the wiki_review channel to update wiki pages
+    and extract ProfileFacts. After compilation, re-embeds all wiki pages.
+    """
+    logger.info("Running nightly wiki review")
+
+    user_tz = get_cached_timezone()
+    today = datetime.now(user_tz).date()
+    day_start = datetime(today.year, today.month, today.day, tzinfo=user_tz)
+    day_end = day_start + timedelta(days=1)
+
+    # Query today's interactions
+    async with session_factory() as db:
+        result = await db.execute(
+            select(Interaction)
+            .where(and_(
+                Interaction.created_at >= day_start,
+                Interaction.created_at < day_end,
+                Interaction.channel == "chat",
+            ))
+            .order_by(Interaction.created_at.asc())
+        )
+        interactions = result.scalars().all()
+
+    if not interactions:
+        logger.info("No interactions today, skipping wiki review")
+        return
+
+    # Format conversations for the LLM
+    conversation_lines = []
+    for ix in interactions:
+        if ix.user_message:
+            conversation_lines.append(f"User: {ix.user_message}")
+        response = ix.assistant_response or {}
+        if summary := response.get("spoken_summary"):
+            conversation_lines.append(f"Assistant: {summary}")
+        actions = response.get("actions_taken") or []
+        if actions:
+            action_names = [a.get("tool_name", "unknown") for a in actions]
+            conversation_lines.append(f"  [Actions: {', '.join(action_names)}]")
+        conversation_lines.append("")
+
+    conversations_text = "\n".join(conversation_lines)
+
+    # Read current wiki index
+    index_entries = wiki_service.read_index()
+    index_text = "\n".join(
+        f"- {e['page_name']}: {e['summary']}" for e in index_entries
+    ) if index_entries else "(wiki is empty — no pages yet)"
+
+    synthetic_message = (
+        f"Review today's conversations and update the personal wiki.\n\n"
+        f"## Current wiki index\n{index_text}\n\n"
+        f"## Today's conversations ({len(interactions)} interactions)\n"
+        f"{conversations_text}"
+    )
+
+    # Invoke agent with wiki_review channel
+    response = await invoke_agent_proactively(
+        session_factory, synthetic_message, channel="wiki_review",
+    )
+
+    if not response:
+        logger.warning("Wiki review produced no response")
+        return
+
+    # Re-embed all wiki pages after compilation
+    async with session_factory() as db:
+        count = await wiki_service.embed_pages(db)
+        await db.commit()
+
+    logger.info("Wiki review complete: %d pages embedded", count)
