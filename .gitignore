@@ -12,4 +12,5 @@ node_modules/
 frontend/dist/
 .vite/
 backend/wiki/
+backend/tool_embedding_cache.json
 ntfy-data/
