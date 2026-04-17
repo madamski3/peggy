@@ -17,12 +17,18 @@ tools (e.g. batch task creation, calendar deletion) cause the loop to halt
 early and return a ConfirmationRequired response. The frontend shows an
 Approve/Reject card, and if the user approves, the original message is
 re-sent with a confirmation_id to resume execution.
+
+Streaming: the orchestrator accepts an optional status_callback coroutine.
+When provided, it emits progress messages during the agent loop so the
+SSE endpoint can stream real-time status updates to the frontend.
 """
 
+import asyncio
 import json
 import logging
 import re
 import uuid
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,6 +62,36 @@ logger = logging.getLogger(__name__)
 # Ensure tool modules are imported so TOOL_REGISTRY is populated
 import app.agent.tools  # noqa: F401
 
+# Type alias for the optional streaming status callback
+StatusCallback = Callable[[str], Coroutine[Any, Any, None]]
+
+# Friendly labels for tool names in status messages
+_TOOL_STATUS_LABELS: dict[str, str] = {
+    "get_todos": "Checking your todos",
+    "get_calendar_events": "Looking at your calendar",
+    "find_free_time": "Finding free time slots",
+    "create_todo": "Creating a todo",
+    "update_todo": "Updating a todo",
+    "create_sub_todos": "Breaking down into sub-tasks",
+    "execute_daily_plan": "Scheduling your day",
+    "get_recent_emails": "Checking your email",
+    "search_emails": "Searching your email",
+    "search_profile": "Looking up your profile",
+    "add_profile_fact": "Saving to your profile",
+    "wiki_search": "Searching your wiki",
+    "write_wiki_page": "Updating wiki",
+    "get_current_weather": "Checking the weather",
+    "get_weather_forecast": "Getting the forecast",
+    "create_list": "Creating a list",
+    "search_conversations": "Searching past conversations",
+    "set_reminder": "Setting a reminder",
+}
+
+
+def _tool_status_label(tool_name: str) -> str:
+    """Get a user-friendly status label for a tool call."""
+    return _TOOL_STATUS_LABELS.get(tool_name, f"Running {tool_name.replace('_', ' ')}")
+
 
 async def run_agent_loop(
     user_message: str,
@@ -63,6 +99,7 @@ async def run_agent_loop(
     db: AsyncSession,
     confirmation_id: uuid.UUID | None = None,
     channel: str = "chat",
+    status_callback: StatusCallback | None = None,
 ) -> ChatResponse:
     """Run the full agent loop: context → LLM → tools → response.
 
@@ -74,6 +111,8 @@ async def run_agent_loop(
             directly without re-running the LLM.
         channel: Interaction channel — "chat" for user-initiated, "proactive"
             for scheduler-triggered invocations.
+        status_callback: Optional async function that receives status strings
+            during the agent loop. Used by the SSE endpoint for streaming.
 
     Returns:
         A ChatResponse with spoken_summary, structured_payload, actions, etc.
@@ -97,13 +136,29 @@ async def run_agent_loop(
             conversation_history = history
 
     # ── Step A.2: Run planner + tool selector in parallel ──
-    plan = await run_planner(user_message, conversation_history)
+    plan, tool_selection = await asyncio.gather(
+        run_planner(user_message, conversation_history),
+        select_tools(user_message, conversation_history),
+    )
     if plan.raw_response:
         await log_llm_call(db, session_id, 0, plan.raw_response)
     logger.info(f"Planner: effort={plan.result.effort}, components={plan.result.components}")
 
-    tool_selection = await select_tools(user_message, conversation_history)
+    if status_callback:
+        await status_callback("Thinking...")
+
     selected_tool_names = tool_selection.selected
+
+    # Force-include channel-specific tools that the vector selector may miss
+    _CHANNEL_REQUIRED_TOOLS: dict[str, set[str]] = {
+        "wiki_review": {
+            "write_wiki_page", "update_wiki_index", "wiki_search",
+            "add_profile_fact", "search_profile",
+        },
+    }
+    if channel in _CHANNEL_REQUIRED_TOOLS:
+        selected_tool_names |= _CHANNEL_REQUIRED_TOOLS[channel]
+
     ranked_scores = sorted(tool_selection.scores.items(), key=lambda x: x[1], reverse=True)
     logger.debug(f"Tool selector scores: {ranked_scores}")
     selected_with_scores = [
@@ -140,6 +195,10 @@ async def run_agent_loop(
     for round_num in range(AGENT_MAX_TOOL_ROUNDS):
         logger.info(f"Agent loop round {round_num + 1}")
 
+        # Emit "composing" status on subsequent rounds (after tool results)
+        if status_callback and round_num > 0:
+            await status_callback("Composing response...")
+
         response = await call_llm(
             messages=messages,
             system=system_prompt,
@@ -171,6 +230,10 @@ async def run_agent_loop(
                     tier = classify_action(tool_name)
 
                     logger.info(f"Tool call: {tool_name} (tier={tier.value})")
+
+                    # Emit status for the tool being called
+                    if status_callback:
+                        await status_callback(f"{_tool_status_label(tool_name)}...")
 
                     # HIGH_STAKES check — halt and request confirmation
                     if tier == ActionTier.HIGH_STAKES:

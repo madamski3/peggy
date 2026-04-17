@@ -4,7 +4,7 @@
  * Handles three states:
  *   1. Empty (no messages) -- shows a welcome screen with suggestion chips
  *   2. Messages present -- renders UserMessage and AssistantMessage components
- *   3. Loading / Error -- shows a bouncing dot indicator or error banner
+ *   3. Loading / Error -- shows a status message or bouncing dot indicator
  *
  * Auto-scrolls to the bottom on new messages.
  */
@@ -17,6 +17,7 @@ interface Props {
   messages: ChatMessage[];
   isLoading: boolean;
   error: string | null;
+  statusMessage: string | null;
   onFollowUp: (text: string) => void;
   onConfirm: (confirmationId: string) => void;
   onReject: () => void;
@@ -44,6 +45,7 @@ export default function MessageList({
   messages,
   isLoading,
   error,
+  statusMessage,
   onFollowUp,
   onConfirm,
   onReject,
@@ -53,7 +55,7 @@ export default function MessageList({
   // Auto-scroll on new messages or loading state change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, isLoading]);
+  }, [messages.length, isLoading, statusMessage]);
 
   // Empty state
   if (messages.length === 0 && !isLoading) {
@@ -111,14 +113,21 @@ export default function MessageList({
           </div>
         ))}
 
-        {/* Loading indicator */}
+        {/* Loading indicator with status message */}
         {isLoading && (
           <div className="flex justify-start">
             <div className="rounded-2xl rounded-bl-md bg-white border-l-[3px] border-l-indigo-400 border border-gray-200 px-4 py-3 shadow-sm">
-              <div className="flex items-center gap-1.5">
-                <span className="block w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:0ms]" />
-                <span className="block w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:150ms]" />
-                <span className="block w-2 h-2 rounded-full bg-gray-400 animate-bounce [animation-delay:300ms]" />
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5">
+                  <span className="block w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:0ms]" />
+                  <span className="block w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:150ms]" />
+                  <span className="block w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:300ms]" />
+                </span>
+                {statusMessage && (
+                  <span className="text-sm text-gray-500 animate-fade-in">
+                    {statusMessage}
+                  </span>
+                )}
               </div>
             </div>
           </div>
