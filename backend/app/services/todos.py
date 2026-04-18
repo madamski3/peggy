@@ -91,7 +91,7 @@ async def get_todos(db: AsyncSession, filters: dict[str, Any] | None = None) -> 
 
     # Order by scheduled_start when date filters are active, otherwise by created_at
     if any(k in filters for k in ("scheduled_date", "date_range")):
-        query = query.order_by(Todo.scheduled_start.asc().nullslast(), Todo.position.asc().nullslast())
+        query = query.order_by(Todo.scheduled_start.asc().nullslast(), Todo.created_at.asc())
     else:
         query = query.order_by(Todo.created_at.desc())
 
