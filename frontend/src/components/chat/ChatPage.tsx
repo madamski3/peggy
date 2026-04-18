@@ -22,7 +22,7 @@ export default function ChatPage() {
   } = useChat();
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)]">
+    <div className="flex flex-col h-screen">
       {/* Session header */}
       {messages.length > 0 && (
         <div className="border-b border-gray-100 bg-white/80 backdrop-blur-sm px-4 py-1.5">

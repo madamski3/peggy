@@ -72,7 +72,7 @@ export default function ContactSection({ fields, onChange }: Props) {
           <button
             type="button"
             onClick={addContact}
-            className="text-sm text-blue-600 hover:text-blue-800"
+            className="text-sm text-primary-600 hover:text-primary-800"
           >
             + Add contact
           </button>
@@ -109,7 +109,7 @@ export default function ContactSection({ fields, onChange }: Props) {
                     </span>
                     {summary}
                     {contact.primary && (
-                      <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">
+                      <span className="text-xs bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded font-medium">
                         Primary
                       </span>
                     )}
@@ -167,7 +167,7 @@ export default function ContactSection({ fields, onChange }: Props) {
                         onChange={(e) =>
                           updateContact(i, { primary: e.target.checked })
                         }
-                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                       />
                       <span className="text-sm text-gray-700">
                         Primary {contact.type}

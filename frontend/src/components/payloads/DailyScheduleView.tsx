@@ -12,7 +12,7 @@ function formatTime(iso: string): string {
 
 function ScheduleRow({ item }: { item: ScheduleItem }) {
   return (
-    <div className="flex items-start gap-3 py-2.5 border-l-2 border-l-blue-400 pl-3">
+    <div className="flex items-start gap-3 py-2.5 border-l-2 border-l-primary-400 pl-3">
       <div className="w-28 shrink-0 text-xs text-gray-500 pt-0.5">
         {formatTime(item.start)} – {formatTime(item.end)}
       </div>

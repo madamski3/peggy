@@ -104,7 +104,7 @@ export default function HouseholdSection({ fields, onChange }: Props) {
           <button
             type="button"
             onClick={addPet}
-            className="text-sm text-blue-600 hover:text-blue-800"
+            className="text-sm text-primary-600 hover:text-primary-800"
           >
             + Add pet
           </button>
@@ -236,7 +236,7 @@ export default function HouseholdSection({ fields, onChange }: Props) {
           <button
             type="button"
             onClick={addVehicle}
-            className="text-sm text-blue-600 hover:text-blue-800"
+            className="text-sm text-primary-600 hover:text-primary-800"
           >
             + Add vehicle
           </button>

@@ -44,5 +44,5 @@ export function Field({ label, children }: FieldProps) {
 }
 
 export const inputClass =
-  "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
+  "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent";
 export const textareaClass = `${inputClass} resize-y min-h-[80px]`;

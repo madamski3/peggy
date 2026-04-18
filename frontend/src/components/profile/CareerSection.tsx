@@ -62,7 +62,7 @@ export default function CareerSection({ fields, onChange }: Props) {
           <button
             type="button"
             onClick={addRole}
-            className="text-sm text-blue-600 hover:text-blue-800"
+            className="text-sm text-primary-600 hover:text-primary-800"
           >
             + Add role
           </button>

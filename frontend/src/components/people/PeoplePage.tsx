@@ -39,8 +39,8 @@ export default function PeoplePage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">People</h1>
         <Link
-          to="/people/new"
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+          to="/profile/people/new"
+          className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
         >
           + Add Person
         </Link>
@@ -52,7 +52,7 @@ export default function PeoplePage() {
             onClick={() => setFilter("")}
             className={`px-3 py-1 rounded-full text-sm ${
               filter === ""
-                ? "bg-blue-100 text-blue-700"
+                ? "bg-primary-100 text-primary-700"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >
@@ -64,7 +64,7 @@ export default function PeoplePage() {
               onClick={() => setFilter(rt)}
               className={`px-3 py-1 rounded-full text-sm capitalize ${
                 filter === rt
-                  ? "bg-blue-100 text-blue-700"
+                  ? "bg-primary-100 text-primary-700"
                   : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >

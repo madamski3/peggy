@@ -233,7 +233,7 @@ export default function PlanningPage() {
         <p className="text-red-600">{error}</p>
         <button
           onClick={() => window.location.reload()}
-          className="mt-4 px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+          className="mt-4 px-4 py-2 text-sm bg-primary-600 text-white rounded hover:bg-primary-700"
         >
           Retry
         </button>
@@ -330,7 +330,7 @@ function StepIndicator({
         <span
           className={`text-xs font-medium px-2 py-0.5 rounded-full ${
             step === 1
-              ? "bg-blue-100 text-blue-700"
+              ? "bg-primary-100 text-primary-700"
               : "bg-gray-100 text-gray-400"
           }`}
         >
@@ -340,7 +340,7 @@ function StepIndicator({
       <span
         className={`text-xs font-medium px-2 py-0.5 rounded-full ${
           step === 2
-            ? "bg-blue-100 text-blue-700"
+            ? "bg-primary-100 text-primary-700"
             : "bg-gray-100 text-gray-400"
         }`}
       >
@@ -402,7 +402,7 @@ function DateNavigator({
       {selectedDate !== todayStr && (
         <button
           onClick={() => onChange(todayStr)}
-          className="ml-2 text-xs text-blue-600 hover:text-blue-700"
+          className="ml-2 text-xs text-primary-600 hover:text-primary-700"
         >
           Today
         </button>
@@ -577,14 +577,14 @@ function ReviewStep({
             onChange={(e) => onUpdate(i, { notes: e.target.value })}
             placeholder="Notes (optional)"
             rows={1}
-            className="mt-3 w-full text-sm border border-gray-200 rounded px-3 py-1.5 placeholder-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-300 resize-none"
+            className="mt-3 w-full text-sm border border-gray-200 rounded px-3 py-1.5 placeholder-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-300 resize-none"
           />
         </div>
       ))}
 
       <button
         onClick={onContinue}
-        className="w-full py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        className="w-full py-2.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
       >
         Continue to Plan
       </button>
@@ -633,7 +633,7 @@ function PlanStep({
             <button
               onClick={onRegenerate}
               disabled={regenerating}
-              className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors disabled:opacity-50"
+              className="px-4 py-2 bg-primary-600 text-white text-sm rounded hover:bg-primary-700 transition-colors disabled:opacity-50"
             >
               {regenerating ? "Generating..." : "Generate Plan"}
             </button>
@@ -767,7 +767,7 @@ function PlanStep({
           }}
           placeholder="Request changes (e.g., move gym to 4pm)..."
           disabled={refining}
-          className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 placeholder-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-300 disabled:opacity-50"
+          className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 placeholder-gray-300 focus:outline-none focus:ring-1 focus:ring-primary-300 disabled:opacity-50"
         />
         <button
           onClick={onRefine}
@@ -790,7 +790,7 @@ function PlanStep({
         <button
           onClick={onSubmit}
           disabled={submitting || refining}
-          className="flex-1 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+          className="flex-1 py-2.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
         >
           {submitting ? "Submitting..." : "Approve Plan"}
         </button>

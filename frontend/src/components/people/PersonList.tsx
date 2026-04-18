@@ -19,8 +19,8 @@ export default function PersonList({ people }: Props) {
       {people.map((person) => (
         <Link
           key={person.id}
-          to={`/people/${person.id}`}
-          className="block bg-white rounded-lg border border-gray-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all"
+          to={`/profile/people/${person.id}`}
+          className="block bg-white rounded-lg border border-gray-200 p-4 hover:border-primary-300 hover:shadow-sm transition-all"
         >
           <div className="flex items-center justify-between">
             <div>

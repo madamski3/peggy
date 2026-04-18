@@ -133,7 +133,7 @@ export default function PersonDetailForm() {
           body: JSON.stringify(payload),
         });
       }
-      navigate("/people");
+      navigate("/profile/people");
     } catch (e) {
       setMessage(`Error: ${e instanceof Error ? e.message : "Unknown error"}`);
     } finally {
@@ -144,7 +144,7 @@ export default function PersonDetailForm() {
   const handleDelete = async () => {
     if (!confirm("Are you sure you want to delete this person?")) return;
     await apiFetch(`/people/${id}`, { method: "DELETE" });
-    navigate("/people");
+    navigate("/profile/people");
   };
 
   if (!loaded) {
@@ -167,7 +167,7 @@ export default function PersonDetailForm() {
             </button>
           )}
           <button
-            onClick={() => navigate("/people")}
+            onClick={() => navigate("/profile/people")}
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors"
           >
             Cancel
@@ -175,7 +175,7 @@ export default function PersonDetailForm() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors"
           >
             {saving ? "Saving..." : "Save"}
           </button>

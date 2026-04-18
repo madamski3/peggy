@@ -7,12 +7,12 @@ const STATUS_FILTERS = ["all", ...STATUS_OPTIONS];
 const PRIORITY_COLORS: Record<string, string> = {
   urgent: "bg-red-100 text-red-700",
   high: "bg-orange-100 text-orange-700",
-  medium: "bg-blue-100 text-blue-700",
+  medium: "bg-primary-100 text-primary-700",
   low: "bg-gray-100 text-gray-600",
 };
 const STATUS_COLORS: Record<string, string> = {
   backlog: "bg-gray-100 text-gray-600",
-  scheduled: "bg-blue-100 text-blue-700",
+  scheduled: "bg-primary-100 text-primary-700",
   completed: "bg-green-100 text-green-700",
   cancelled: "bg-gray-100 text-gray-500",
 };
@@ -70,7 +70,7 @@ export default function TodosPage() {
             onClick={() => setFilter(s)}
             className={`px-3 py-1 rounded-full text-sm capitalize ${
               filter === s
-                ? "bg-blue-100 text-blue-700"
+                ? "bg-primary-100 text-primary-700"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >

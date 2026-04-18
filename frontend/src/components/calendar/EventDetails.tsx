@@ -89,7 +89,7 @@ export default function EventDetails({ event, anchor, onClose }: Props) {
             </div>
           )}
           {event.extendedProps.isAssistantCreated && (
-            <div className="text-xs text-blue-700 bg-blue-50 px-2 py-1 rounded inline-block">
+            <div className="text-xs text-primary-700 bg-primary-50 px-2 py-1 rounded inline-block">
               Created by assistant
             </div>
           )}

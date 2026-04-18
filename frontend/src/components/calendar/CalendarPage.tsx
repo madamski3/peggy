@@ -60,7 +60,7 @@ export default function CalendarPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] p-2 md:p-4 bg-gray-50">
+    <div className="flex flex-col h-screen p-2 md:p-4 bg-surface-50">
       {!connected && (
         <div className="mb-3 p-3 rounded-md bg-amber-50 border border-amber-200 text-sm text-amber-900">
           Google Calendar isn't connected.{" "}
