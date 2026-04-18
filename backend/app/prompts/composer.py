@@ -26,6 +26,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tables import PromptComponent
+from app.observability.langfuse_client import get_langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,30 @@ async def upsert_prompt_components(
     stmt = pg_insert(PromptComponent).values(rows)
     stmt = stmt.on_conflict_do_nothing(index_elements=["id"])
     await db.execute(stmt)
+
+    _mirror_components_to_langfuse(components)
+
+
+def _mirror_components_to_langfuse(components: list[ActiveComponent]) -> None:
+    """Push each component to Langfuse Prompt Management as a labeled version.
+
+    Langfuse dedupes on (name, prompt_text) so repeat calls with unchanged text
+    are no-ops. Tagging with the content hash lets us correlate Langfuse prompt
+    versions with our `prompt_components` table.
+    """
+    lf = get_langfuse()
+    if lf is None:
+        return
+    for c in components:
+        try:
+            lf.create_prompt(
+                name=c.name,
+                prompt=c.raw_text,
+                labels=["production"],
+                tags=[c.id[:12], c.type],
+            )
+        except Exception as e:
+            logger.warning("Langfuse create_prompt failed for %s: %s", c.name, e)
 
 
 async def compose_and_persist_prompt(

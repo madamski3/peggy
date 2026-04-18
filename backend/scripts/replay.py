@@ -34,6 +34,7 @@ from sqlalchemy import select
 from app.agent.orchestrator import run_agent_loop
 from app.database import async_session_maker
 from app.models.tables import LlmCall, PromptComponent
+from app.observability.langfuse_client import get_langfuse
 from app.prompts.composer import COMPONENTS_DIR
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,46 @@ def _prompt_set_fingerprint() -> str:
         hasher.update(path.read_bytes())
         hasher.update(b"\n")
     return hasher.hexdigest()
+
+
+async def _run_as_langfuse_experiment(
+    dataset_name: str,
+    scenarios_by_id: dict[str, dict[str, Any]],
+    results_out: dict[str, dict[str, Any]],
+    run_name: str,
+) -> None:
+    """Run scenarios via Langfuse's run_experiment so they link to dataset items.
+
+    Stores each result into `results_out` keyed by scenario_id. Runs
+    sequentially (max_concurrency=1) because the agent loop uses a single DB
+    session per call.
+    """
+    lf = get_langfuse()
+    if lf is None:
+        logger.warning("--langfuse set but Langfuse not configured; running without linkage")
+        return
+    try:
+        dataset = lf.get_dataset(name=dataset_name)
+    except Exception as e:
+        logger.warning("Langfuse dataset %s unavailable: %s", dataset_name, e)
+        return
+
+    async def task(*, item, **_kwargs):
+        scenario_id = item.id
+        scenario = scenarios_by_id.get(scenario_id)
+        if scenario is None:
+            return {"error": f"no scenario for item {scenario_id}"}
+        result = await _run_scenario(scenario)
+        results_out[scenario_id] = result
+        return {
+            "spoken_summary": result.get("spoken_summary"),
+            "tools_called": result.get("tools_called"),
+            "error": result.get("error"),
+        }
+
+    logger.info("Running Langfuse experiment %s on dataset %s", run_name, dataset_name)
+    dataset.run_experiment(run_name=run_name, name=run_name, task=task, max_concurrency=1)
+    lf.flush()
 
 
 async def _run_scenario(scenario: dict[str, Any]) -> dict[str, Any]:
@@ -174,7 +215,12 @@ def _check_assertions(scenario: dict[str, Any], result: dict[str, Any]) -> dict[
     return {"checks": checks, "passed": passed}
 
 
-async def _run(scenarios_path: Path, output_dir: Path, only_id: str | None) -> int:
+async def _run(
+    scenarios_path: Path,
+    output_dir: Path,
+    only_id: str | None,
+    langfuse_enabled: bool = False,
+) -> int:
     scenarios = yaml.safe_load(scenarios_path.read_text()) or []
     if only_id:
         scenarios = [s for s in scenarios if s.get("id") == only_id]
@@ -195,11 +241,23 @@ async def _run(scenarios_path: Path, output_dir: Path, only_id: str | None) -> i
         "scenarios": [],
     }
 
+    scenarios_by_id = {s.get("id"): s for s in scenarios}
+    scenario_results: dict[str, dict[str, Any]] = {}
+
+    if langfuse_enabled:
+        await _run_as_langfuse_experiment(
+            scenarios_path.stem, scenarios_by_id, scenario_results,
+            run_name=f"replay-{timestamp}-{fingerprint[:8]}",
+        )
+
     overall_pass = True
     for scenario in scenarios:
         scenario_id = scenario.get("id", "unknown")
-        logger.info("Running scenario: %s", scenario_id)
-        result = await _run_scenario(scenario)
+        if scenario_id in scenario_results:
+            result = scenario_results[scenario_id]
+        else:
+            logger.info("Running scenario: %s", scenario_id)
+            result = await _run_scenario(scenario)
         assertions = _check_assertions(scenario, result)
         result["assertions"] = assertions
         if not assertions["passed"]:
@@ -230,6 +288,11 @@ def main() -> None:
     parser.add_argument("--scenarios", required=True, type=Path)
     parser.add_argument("--scenario-id", default=None)
     parser.add_argument("--output-dir", default=Path("evals/runs"), type=Path)
+    parser.add_argument(
+        "--langfuse",
+        action="store_true",
+        help="Link each scenario trace to its Langfuse dataset item.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -237,7 +300,9 @@ def main() -> None:
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
 
-    exit_code = asyncio.run(_run(args.scenarios, args.output_dir, args.scenario_id))
+    exit_code = asyncio.run(
+        _run(args.scenarios, args.output_dir, args.scenario_id, args.langfuse)
+    )
     sys.exit(exit_code)
 
 

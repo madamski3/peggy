@@ -20,6 +20,10 @@ from pydantic import BaseModel
 from app.agent.client import get_client
 from app.agent.context import build_conversation_messages
 from app.globals import PLANNER_MAX_TOKENS, PLANNER_MODEL
+from app.observability.langfuse_client import (
+    anthropic_usage_to_langfuse,
+    trace_observation,
+)
 from app.prompts.composer import ActiveComponent
 
 logger = logging.getLogger(__name__)
@@ -121,12 +125,24 @@ async def run_planner(
 
     try:
         client = get_client()
-        response = await client.messages.create(
+        with trace_observation(
+            name="planner",
+            as_type="generation",
             model=PLANNER_MODEL,
-            max_tokens=PLANNER_MAX_TOKENS,
-            system=_PLANNER_SYSTEM_PROMPT,
-            messages=messages,
-        )
+            input={"system": _PLANNER_SYSTEM_PROMPT, "messages": messages},
+            metadata={"planner_prompt_id": PLANNER_PROMPT_ID},
+        ) as gen:
+            response = await client.messages.create(
+                model=PLANNER_MODEL,
+                max_tokens=PLANNER_MAX_TOKENS,
+                system=_PLANNER_SYSTEM_PROMPT,
+                messages=messages,
+            )
+            if gen is not None:
+                gen.update(
+                    output=response.content,
+                    usage_details=anthropic_usage_to_langfuse(response.usage),
+                )
     except Exception as e:
         logger.warning(f"Planner API call failed: {e}")
         return _fallback()

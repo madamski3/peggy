@@ -48,7 +48,12 @@ from app.agent.tools.registry import (
     get_tool_schemas_for_names,
 )
 from app.agent.tool_selector import select_tools
-from app.globals import AGENT_MAX_TOOL_ROUNDS
+from app.globals import AGENT_MAX_TOOL_ROUNDS, ANTHROPIC_MODEL
+from app.observability.langfuse_client import (
+    anthropic_usage_to_langfuse,
+    set_trace_attributes,
+    trace_observation,
+)
 from app.prompts.composer import compose_and_persist_prompt, upsert_prompt_components
 from app.schemas.agent import (
     ActionTaken,
@@ -135,215 +140,257 @@ async def run_agent_loop(
     if confirmation_id is not None:
         return await _execute_confirmed_action(db, session_id, user_message, confirmation_id)
 
-    # ── Step A: Context Assembly ──
-    context = await assemble_context(db, user_message, session_id)
+    with trace_observation(
+        name="agent_loop",
+        as_type="agent",
+        input={"user_message": user_message, "channel": channel},
+        metadata={"dry_run": dry_run},
+    ) as root_span:
+        set_trace_attributes(session_id=str(session_id), tags=[channel])
 
-    # ── Step A.1: Load conversation history (planner needs it) ──
-    conversation_history = None
-    if session_id:
-        history = await get_session_history(db, session_id, limit=3)
-        if history:
-            conversation_history = history
+        # ── Step A: Context Assembly ──
+        context = await assemble_context(db, user_message, session_id)
 
-    # ── Step A.2: Run planner + tool selector in parallel ──
-    plan, tool_selection = await asyncio.gather(
-        run_planner(user_message, conversation_history),
-        select_tools(user_message, conversation_history),
-    )
-    if plan.raw_response:
-        await upsert_prompt_components(db, [planner_component()])
-        await log_llm_call(
+        # ── Step A.1: Load conversation history (planner needs it) ──
+        conversation_history = None
+        if session_id:
+            history = await get_session_history(db, session_id, limit=3)
+            if history:
+                conversation_history = history
+
+        # ── Step A.2: Run planner + tool selector in parallel ──
+        plan, tool_selection = await asyncio.gather(
+            run_planner(user_message, conversation_history),
+            select_tools(user_message, conversation_history),
+        )
+        if plan.raw_response:
+            await upsert_prompt_components(db, [planner_component()])
+            await log_llm_call(
+                db,
+                session_id,
+                0,
+                plan.raw_response,
+                prompt_component_ids=[PLANNER_PROMPT_ID],
+            )
+        logger.info(f"Planner: effort={plan.result.effort}, components={plan.result.components}")
+
+        if status_callback:
+            await status_callback("Thinking...")
+
+        selected_tool_names = tool_selection.selected
+
+        # Force-include channel-specific tools that the vector selector may miss
+        _CHANNEL_REQUIRED_TOOLS: dict[str, set[str]] = {
+            "wiki_review": {
+                "write_wiki_page", "update_wiki_index", "wiki_search",
+                "add_profile_fact", "search_profile",
+            },
+        }
+        if channel in _CHANNEL_REQUIRED_TOOLS:
+            selected_tool_names |= _CHANNEL_REQUIRED_TOOLS[channel]
+
+        ranked_scores = sorted(tool_selection.scores.items(), key=lambda x: x[1], reverse=True)
+        logger.debug(f"Tool selector scores: {ranked_scores}")
+        selected_with_scores = [
+            (name, score) for name, score in ranked_scores if name in selected_tool_names
+        ]
+        logger.info(f"Tool selector: {selected_with_scores}")
+
+        # ── Step A.3: Compose system prompt from relevant components ──
+        context["strategy"] = plan.result.strategy
+        composed = await compose_and_persist_prompt(
             db,
-            session_id,
-            0,
-            plan.raw_response,
-            prompt_component_ids=[PLANNER_PROMPT_ID],
+            context=context,
+            planner_components=plan.result.components,
+            channel=channel,
         )
-    logger.info(f"Planner: effort={plan.result.effort}, components={plan.result.components}")
+        system_prompt = composed.text
+        main_component_ids = [c.id for c in composed.components]
 
-    if status_callback:
-        await status_callback("Thinking...")
+        # ── Step B: Build messages ──
+        messages = build_conversation_messages(user_message, conversation_history)
+        turn_start = len(messages)  # index where this turn's messages begin
 
-    selected_tool_names = tool_selection.selected
+        # ── Step C: Tool-use loop ──
+        # Each round: send messages to Claude -> if Claude returns tool_use, execute
+        # the tool and append the result to messages -> repeat. If Claude returns
+        # end_turn (i.e. it's done calling tools), extract the final text and break.
+        actions_taken: list[ActionTaken] = []
+        tool_schemas = get_tool_schemas_for_names(selected_tool_names)
+        tool_names_for_llm = sorted(t["name"] for t in tool_schemas)
+        logger.info(f"Tools for LLM: {tool_names_for_llm}")
+        tools_meta = {
+            "selected": sorted(selected_tool_names),
+            "scores": ranked_scores,
+        }
+        final_text = ""
 
-    # Force-include channel-specific tools that the vector selector may miss
-    _CHANNEL_REQUIRED_TOOLS: dict[str, set[str]] = {
-        "wiki_review": {
-            "write_wiki_page", "update_wiki_index", "wiki_search",
-            "add_profile_fact", "search_profile",
-        },
-    }
-    if channel in _CHANNEL_REQUIRED_TOOLS:
-        selected_tool_names |= _CHANNEL_REQUIRED_TOOLS[channel]
+        for round_num in range(AGENT_MAX_TOOL_ROUNDS):
+            logger.info(f"Agent loop round {round_num + 1}")
 
-    ranked_scores = sorted(tool_selection.scores.items(), key=lambda x: x[1], reverse=True)
-    logger.debug(f"Tool selector scores: {ranked_scores}")
-    selected_with_scores = [
-        (name, score) for name, score in ranked_scores if name in selected_tool_names
-    ]
-    logger.info(f"Tool selector: {selected_with_scores}")
+            # Emit "composing" status on subsequent rounds (after tool results)
+            if status_callback and round_num > 0:
+                await status_callback("Composing response...")
 
-    # ── Step A.3: Compose system prompt from relevant components ──
-    context["strategy"] = plan.result.strategy
-    composed = await compose_and_persist_prompt(
-        db,
-        context=context,
-        planner_components=plan.result.components,
-        channel=channel,
-    )
-    system_prompt = composed.text
-    main_component_ids = [c.id for c in composed.components]
+            with trace_observation(
+                name=f"main-llm-round-{round_num + 1}",
+                as_type="generation",
+                model=ANTHROPIC_MODEL,
+                input={"system": system_prompt, "messages": messages},
+                metadata={
+                    "round": round_num + 1,
+                    "prompt_component_ids": main_component_ids,
+                    "effort": plan.result.effort,
+                },
+            ) as gen_span:
+                response = await call_llm(
+                    messages=messages,
+                    system=system_prompt,
+                    tools=tool_schemas,
+                    effort=plan.result.effort,
+                )
+                if gen_span is not None:
+                    gen_span.update(
+                        output=response.content,
+                        usage_details=anthropic_usage_to_langfuse(response.usage),
+                    )
 
-    # ── Step B: Build messages ──
-    messages = build_conversation_messages(user_message, conversation_history)
-    turn_start = len(messages)  # index where this turn's messages begin
+            await log_llm_call(
+                db,
+                session_id,
+                round_num + 1,
+                response,
+                tools=tools_meta,
+                prompt_component_ids=main_component_ids,
+            )
 
-    # ── Step C: Tool-use loop ──
-    # Each round: send messages to Claude -> if Claude returns tool_use, execute
-    # the tool and append the result to messages -> repeat. If Claude returns
-    # end_turn (i.e. it's done calling tools), extract the final text and break.
-    actions_taken: list[ActionTaken] = []
-    tool_schemas = get_tool_schemas_for_names(selected_tool_names)
-    tool_names_for_llm = sorted(t["name"] for t in tool_schemas)
-    logger.info(f"Tools for LLM: {tool_names_for_llm}")
-    tools_meta = {
-        "selected": sorted(selected_tool_names),
-        "scores": ranked_scores,
-    }
-    final_text = ""
+            # Check if Claude refused the request
+            if response.stop_reason == "refusal":
+                final_text = _extract_text(response.content) or "I'm not able to help with that request."
+                break
 
-    for round_num in range(AGENT_MAX_TOOL_ROUNDS):
-        logger.info(f"Agent loop round {round_num + 1}")
+            # Check if Claude is done (final text response)
+            if response.stop_reason == "end_turn":
+                # Extract text from content blocks
+                final_text = _extract_text(response.content)
+                break
 
-        # Emit "composing" status on subsequent rounds (after tool results)
-        if status_callback and round_num > 0:
-            await status_callback("Composing response...")
+            # Process tool calls
+            if response.stop_reason == "tool_use":
+                tool_results = []
 
-        response = await call_llm(
-            messages=messages,
-            system=system_prompt,
-            tools=tool_schemas,
-            effort=plan.result.effort,
-        )
+                for block in response.content:
+                    if block.type == "tool_use":
+                        tool_name = block.name
+                        tool_input = block.input
+                        tier = classify_action(tool_name)
 
-        await log_llm_call(
-            db,
-            session_id,
-            round_num + 1,
-            response,
-            tools=tools_meta,
-            prompt_component_ids=main_component_ids,
-        )
+                        logger.info(f"Tool call: {tool_name} (tier={tier.value})")
 
-        # Check if Claude refused the request
-        if response.stop_reason == "refusal":
-            final_text = _extract_text(response.content) or "I'm not able to help with that request."
-            break
+                        # Emit status for the tool being called
+                        if status_callback:
+                            await status_callback(f"{_tool_status_label(tool_name)}...")
 
-        # Check if Claude is done (final text response)
-        if response.stop_reason == "end_turn":
-            # Extract text from content blocks
-            final_text = _extract_text(response.content)
-            break
+                        # HIGH_STAKES check — halt and request confirmation
+                        if tier == ActionTier.HIGH_STAKES:
+                            description = _describe_action(tool_name, tool_input)
+                            chat_response = ChatResponse(
+                                spoken_summary=_build_confirmation_summary(tool_name, tool_input),
+                                confirmation_required=ConfirmationRequired(
+                                    tool_name=tool_name,
+                                    tool_args=tool_input,
+                                    description=description,
+                                ),
+                                actions_taken=actions_taken,
+                                session_id=session_id,
+                            )
+                            # Log the confirmation interaction before returning
+                            await _log_and_commit(
+                                db, session_id, user_message, chat_response, actions_taken, channel,
+                                planner_result=plan.result,
+                            )
+                            if root_span is not None:
+                                root_span.update(output={
+                                    "confirmation_required": True,
+                                    "tool_name": tool_name,
+                                })
+                            return chat_response
 
-        # Process tool calls
-        if response.stop_reason == "tool_use":
-            tool_results = []
+                        # Execute the tool (or mock it in dry-run for non-READ_ONLY)
+                        with trace_observation(
+                            name=f"tool:{tool_name}",
+                            as_type="tool",
+                            input=tool_input,
+                            metadata={"tier": tier.value, "dry_run": dry_run},
+                        ) as tool_span:
+                            try:
+                                if dry_run and tier != ActionTier.READ_ONLY:
+                                    result = _mock_tool_result(tool_name, tool_input)
+                                    logger.info(f"[dry_run] Mocked {tool_name} -> {result}")
+                                else:
+                                    handler = TOOL_REGISTRY[tool_name].handler
+                                    result = await handler(db, **tool_input)
+                            except Exception as e:
+                                logger.error(f"Tool {tool_name} failed: {e}")
+                                result = {"error": str(e)}
+                            if tool_span is not None:
+                                tool_span.update(output=result)
 
-            for block in response.content:
-                if block.type == "tool_use":
-                    tool_name = block.name
-                    tool_input = block.input
-                    tier = classify_action(tool_name)
+                        # Build tool result for Anthropic
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": json.dumps(result, default=str),
+                        })
 
-                    logger.info(f"Tool call: {tool_name} (tier={tier.value})")
-
-                    # Emit status for the tool being called
-                    if status_callback:
-                        await status_callback(f"{_tool_status_label(tool_name)}...")
-
-                    # HIGH_STAKES check — halt and request confirmation
-                    if tier == ActionTier.HIGH_STAKES:
-                        description = _describe_action(tool_name, tool_input)
-                        chat_response = ChatResponse(
-                            spoken_summary=_build_confirmation_summary(tool_name, tool_input),
-                            confirmation_required=ConfirmationRequired(
+                        # Track non-read-only actions
+                        if tier != ActionTier.READ_ONLY:
+                            actions_taken.append(ActionTaken(
                                 tool_name=tool_name,
                                 tool_args=tool_input,
-                                description=description,
-                            ),
-                            actions_taken=actions_taken,
-                            session_id=session_id,
-                        )
-                        # Log the confirmation interaction before returning
-                        await _log_and_commit(
-                            db, session_id, user_message, chat_response, actions_taken, channel,
-                            planner_result=plan.result,
-                        )
-                        return chat_response
+                                result_summary=_summarize_result(tool_name, result),
+                            ))
+                    elif block.type == "text":
+                        # Claude may emit text alongside tool calls
+                        pass
 
-                    # Execute the tool (or mock it in dry-run for non-READ_ONLY)
-                    try:
-                        if dry_run and tier != ActionTier.READ_ONLY:
-                            result = _mock_tool_result(tool_name, tool_input)
-                            logger.info(f"[dry_run] Mocked {tool_name} -> {result}")
-                        else:
-                            handler = TOOL_REGISTRY[tool_name].handler
-                            result = await handler(db, **tool_input)
-                    except Exception as e:
-                        logger.error(f"Tool {tool_name} failed: {e}")
-                        result = {"error": str(e)}
-
-                    # Build tool result for Anthropic
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": json.dumps(result, default=str),
-                    })
-
-                    # Track non-read-only actions
-                    if tier != ActionTier.READ_ONLY:
-                        actions_taken.append(ActionTaken(
-                            tool_name=tool_name,
-                            tool_args=tool_input,
-                            result_summary=_summarize_result(tool_name, result),
-                        ))
-                elif block.type == "text":
-                    # Claude may emit text alongside tool calls
-                    pass
-
-            # Append the assistant's response and tool results for the next round
-            messages.append({"role": "assistant", "content": _serialize_content(response.content)})
-            messages.append({"role": "user", "content": tool_results})
+                # Append the assistant's response and tool results for the next round
+                messages.append({"role": "assistant", "content": _serialize_content(response.content)})
+                messages.append({"role": "user", "content": tool_results})
+            else:
+                # Unexpected stop reason — extract what we can
+                final_text = _extract_text(response.content)
+                break
         else:
-            # Unexpected stop reason — extract what we can
-            final_text = _extract_text(response.content)
-            break
-    else:
-        # Exhausted max rounds
-        logger.warning(f"Agent loop hit max rounds ({AGENT_MAX_TOOL_ROUNDS})")
-        final_text = _extract_text(response.content) if response else ""
+            # Exhausted max rounds
+            logger.warning(f"Agent loop hit max rounds ({AGENT_MAX_TOOL_ROUNDS})")
+            final_text = _extract_text(response.content) if response else ""
 
-    # Append the final assistant response so the chain is complete
-    if response and response.content:
-        messages.append({"role": "assistant", "content": _serialize_content(response.content)})
+        # Append the final assistant response so the chain is complete
+        if response and response.content:
+            messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
-    # Extract this turn's messages (excluding replayed history)
-    turn_messages = messages[turn_start:]
+        # Extract this turn's messages (excluding replayed history)
+        turn_messages = messages[turn_start:]
 
-    # ── Step D: Response Builder ──
-    # Claude is instructed to output a JSON object with spoken_summary,
-    # structured_payload, and follow_up_suggestions. _build_response tries to
-    # parse that JSON; if parsing fails, the raw text becomes spoken_summary.
-    chat_response = _build_response(final_text, actions_taken, session_id)
+        # ── Step D: Response Builder ──
+        # Claude is instructed to output a JSON object with spoken_summary,
+        # structured_payload, and follow_up_suggestions. _build_response tries to
+        # parse that JSON; if parsing fails, the raw text becomes spoken_summary.
+        chat_response = _build_response(final_text, actions_taken, session_id)
 
-    # ── Step E+F: Log and commit ──
-    await _log_and_commit(
-        db, session_id, user_message, chat_response, actions_taken, channel,
-        message_chain=turn_messages,
-        planner_result=plan.result,
-    )
-    return chat_response
+        # ── Step E+F: Log and commit ──
+        await _log_and_commit(
+            db, session_id, user_message, chat_response, actions_taken, channel,
+            message_chain=turn_messages,
+            planner_result=plan.result,
+        )
+        if root_span is not None:
+            root_span.update(output={
+                "spoken_summary": chat_response.spoken_summary,
+                "actions_taken": [a.tool_name for a in actions_taken],
+            })
+        return chat_response
 
 
 async def _execute_confirmed_action(

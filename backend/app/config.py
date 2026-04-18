@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     key_date_alert_enabled: bool = True
     nightly_wiki_review_enabled: bool = True
 
+    # Langfuse observability (self-hosted). Leave empty to disable tracing.
+    langfuse_host: str = ""
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+
     model_config = {"env_file": ".env"}
 
 
