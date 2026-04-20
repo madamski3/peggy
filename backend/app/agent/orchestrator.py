@@ -48,7 +48,7 @@ from app.agent.tools.registry import (
     get_tool_schemas_for_names,
 )
 from app.agent.tool_selector import select_tools
-from app.globals import AGENT_MAX_TOOL_ROUNDS, ANTHROPIC_MODEL
+from app.globals import AGENT_MAX_TOOL_ROUNDS, ANTHROPIC_MODEL, TOOL_SELECTION_MODE
 from app.observability.langfuse_client import (
     anthropic_usage_to_langfuse,
     set_trace_attributes,
@@ -158,11 +158,21 @@ async def run_agent_loop(
             if history:
                 conversation_history = history
 
-        # ── Step A.2: Run planner + tool selector in parallel ──
-        plan, tool_selection = await asyncio.gather(
-            run_planner(user_message, conversation_history),
-            select_tools(user_message, conversation_history),
-        )
+        # ── Step A.2: Run planner (+ tool selector in "vector" mode) in parallel ──
+        if TOOL_SELECTION_MODE == "vector":
+            plan, tool_selection = await asyncio.gather(
+                run_planner(user_message, conversation_history),
+                select_tools(user_message, conversation_history),
+            )
+            selected_tool_names = tool_selection.selected
+            ranked_scores = sorted(
+                tool_selection.scores.items(), key=lambda x: x[1], reverse=True
+            )
+        else:
+            plan = await run_planner(user_message, conversation_history)
+            selected_tool_names = set(TOOL_REGISTRY.keys())
+            ranked_scores = []
+
         if plan.raw_response:
             await upsert_prompt_components(db, [planner_component()])
             await log_llm_call(
@@ -177,8 +187,6 @@ async def run_agent_loop(
         if status_callback:
             await status_callback("Thinking...")
 
-        selected_tool_names = tool_selection.selected
-
         # Force-include channel-specific tools that the vector selector may miss
         _CHANNEL_REQUIRED_TOOLS: dict[str, set[str]] = {
             "wiki_review": {
@@ -189,12 +197,14 @@ async def run_agent_loop(
         if channel in _CHANNEL_REQUIRED_TOOLS:
             selected_tool_names |= _CHANNEL_REQUIRED_TOOLS[channel]
 
-        ranked_scores = sorted(tool_selection.scores.items(), key=lambda x: x[1], reverse=True)
-        logger.debug(f"Tool selector scores: {ranked_scores}")
-        selected_with_scores = [
-            (name, score) for name, score in ranked_scores if name in selected_tool_names
-        ]
-        logger.info(f"Tool selector: {selected_with_scores}")
+        if TOOL_SELECTION_MODE == "vector":
+            logger.debug(f"Tool selector scores: {ranked_scores}")
+            selected_with_scores = [
+                (name, score) for name, score in ranked_scores if name in selected_tool_names
+            ]
+            logger.info(f"Tool selector: {selected_with_scores}")
+        else:
+            logger.info(f"Tool selection mode: all ({len(selected_tool_names)} tools)")
 
         # ── Step A.3: Compose system prompt from relevant components ──
         context["strategy"] = plan.result.strategy

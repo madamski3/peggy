@@ -27,7 +27,10 @@ AGENT_DEFAULT_EFFORT = "medium"
 PLANNER_MODEL = "claude-haiku-4-5-20251001"
 PLANNER_MAX_TOKENS = 1024
 
-# Tool selection (vector search)
+# Tool selection
+# "all"    — pass every registered tool to the main LLM on every turn
+# "vector" — embed the user message and retrieve top-K tools by similarity
+TOOL_SELECTION_MODE = "all"
 TOOL_SELECTOR_TOP_K = 12
 TOOL_SELECTOR_THRESHOLD = 0.40
 
