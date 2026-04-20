@@ -8,75 +8,54 @@ Registered tools:
   - get_recent_conversations  -- last N interactions for general context
 """
 
-from typing import Any
-
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.tools.registry import ActionTier, ToolDefinition, register_tool
+from app.agent.tools.registry import ActionTier, tool
 from app.services import conversations as convo_service
 
 
-# ── Handlers ──────────────────────────────────────────────────────
+class DateRange(BaseModel):
+    start: str | None = None
+    end: str | None = None
 
 
-async def handle_search_conversations(db: AsyncSession, **kwargs: Any) -> dict:
-    results = await convo_service.search_conversations(
-        db,
-        query=kwargs["query"],
-        date_range=kwargs.get("date_range"),
-    )
-    return {"conversations": results, "count": len(results)}
+class SearchConversationsInput(BaseModel):
+    query: str
+    date_range: DateRange | None = None
 
 
-async def handle_get_recent_conversations(db: AsyncSession, **kwargs: Any) -> dict:
-    n = kwargs.get("n", 5)
-    results = await convo_service.get_recent_conversations(db, n=n)
-    return {"conversations": results, "count": len(results)}
+class GetRecentConversationsInput(BaseModel):
+    n: int = 5
 
 
-# ── Tool Definitions ─────────────────────────────────────────────
-
-register_tool(ToolDefinition(
-    name="search_conversations",
-    description="Search past conversations by text content.",
+@tool(
+    tier=ActionTier.READ_ONLY,
+    category="conversation",
     embedding_text=(
         "conversation: search_conversations — search, find past conversations, "
         "what did we talk about, previous chats. Did I ask about X before? "
         "What did you tell me about Y?"
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "query": {"type": "string"},
-            "date_range": {
-                "type": "object",
-                "properties": {
-                    "start": {"type": "string"},
-                    "end": {"type": "string"},
-                },
-            },
-        },
-        "required": ["query"],
-    },
-    tier=ActionTier.READ_ONLY,
-    handler=handle_search_conversations,
-    category="conversation",
-))
+)
+async def search_conversations(db: AsyncSession, input: SearchConversationsInput) -> dict:
+    """Search past conversations by text content."""
+    date_range = input.date_range.model_dump(exclude_none=True) if input.date_range else None
+    results = await convo_service.search_conversations(
+        db, query=input.query, date_range=date_range,
+    )
+    return {"conversations": results, "count": len(results)}
 
-register_tool(ToolDefinition(
-    name="get_recent_conversations",
-    description="Get the most recent conversation interactions.",
+
+@tool(
+    tier=ActionTier.READ_ONLY,
+    category="conversation",
     embedding_text=(
         "conversation: get_recent_conversations — recent chats, conversation history, "
         "what did we discuss recently. Show my recent conversations."
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "n": {"type": "integer"},
-        },
-    },
-    tier=ActionTier.READ_ONLY,
-    handler=handle_get_recent_conversations,
-    category="conversation",
-))
+)
+async def get_recent_conversations(db: AsyncSession, input: GetRecentConversationsInput) -> dict:
+    """Get the most recent conversation interactions."""
+    results = await convo_service.get_recent_conversations(db, n=input.n)
+    return {"conversations": results, "count": len(results)}
