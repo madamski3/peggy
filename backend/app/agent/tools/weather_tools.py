@@ -9,70 +9,51 @@ Registered tools:
   - get_weather_forecast (READ_ONLY) -- hourly forecast for a date
 """
 
-from typing import Any
-
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.tools.registry import ActionTier, ToolDefinition, register_tool
+from app.agent.tools.registry import ActionTier, tool
 from app.services import weather as weather_service
 
 
-# ── Handlers ──────────────────────────────────────────────────────
+class GetWeatherForecastInput(BaseModel):
+    date: str | None = Field(
+        None, description="Date to forecast (YYYY-MM-DD). Defaults to today."
+    )
 
 
-async def handle_get_current_weather(db: AsyncSession, **kwargs: Any) -> dict:
-    return await weather_service.get_current_weather()
-
-
-async def handle_get_weather_forecast(db: AsyncSession, **kwargs: Any) -> dict:
-    return await weather_service.get_forecast(date=kwargs.get("date"))
-
-
-# ── Tool Definitions ─────────────────────────────────────────────
-
-register_tool(ToolDefinition(
-    name="get_current_weather",
-    description=(
-        "Get current weather conditions — temperature, feels-like, humidity, "
-        "wind speed, and conditions. Uses the user's configured location."
-    ),
+@tool(
+    tier=ActionTier.READ_ONLY,
+    category="weather",
     embedding_text=(
         "weather: get_current_weather — what's the weather right now, "
         "current temperature, is it raining, is it cold, is it hot, "
         "weather conditions, humidity, wind, feels like outside"
     ),
-    input_schema={
-        "type": "object",
-        "properties": {},
-    },
-    tier=ActionTier.READ_ONLY,
-    handler=handle_get_current_weather,
-    category="weather",
-))
+)
+async def get_current_weather(db: AsyncSession) -> dict:
+    """Get current weather conditions.
 
-register_tool(ToolDefinition(
-    name="get_weather_forecast",
-    description=(
-        "Get the hourly weather forecast for a specific date — temperature, "
-        "precipitation probability, conditions, and wind for each hour. "
-        "Defaults to today if no date is provided."
-    ),
+    Temperature, feels-like, humidity, wind speed, and conditions for the
+    user's configured location.
+    """
+    return await weather_service.get_current_weather()
+
+
+@tool(
+    tier=ActionTier.READ_ONLY,
+    category="weather",
     embedding_text=(
         "weather: get_weather_forecast — will it rain today, tomorrow's weather, "
         "hourly forecast, temperature today, precipitation, "
         "should I bring an umbrella, is it going to snow, "
         "weather this afternoon, weekend forecast, outdoor plans"
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "date": {
-                "type": "string",
-                "description": "Date to forecast (YYYY-MM-DD). Defaults to today.",
-            },
-        },
-    },
-    tier=ActionTier.READ_ONLY,
-    handler=handle_get_weather_forecast,
-    category="weather",
-))
+)
+async def get_weather_forecast(db: AsyncSession, input: GetWeatherForecastInput) -> dict:
+    """Get the hourly weather forecast for a specific date.
+
+    Temperature, precipitation probability, conditions, and wind for each
+    hour. Defaults to today if no date is provided.
+    """
+    return await weather_service.get_forecast(date=input.date)
