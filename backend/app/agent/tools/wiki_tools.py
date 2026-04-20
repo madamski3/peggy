@@ -10,114 +10,87 @@ Registered tools:
   - update_wiki_index  (LOW_STAKES)  -- update the wiki index
 """
 
-from typing import Any
-
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.tools.registry import ActionTier, ToolDefinition, register_tool
+from app.agent.tools.registry import ActionTier, tool
 from app.services import wiki as wiki_service
 
 
-# ── Handlers ──────────────────────────────────────────────────────
+class WikiSearchInput(BaseModel):
+    query: str = Field(..., description="Search query.")
+    top_k: int = Field(3, description="Max results (default 3).")
 
 
-async def handle_wiki_search(db: AsyncSession, **kwargs: Any) -> dict:
-    results = await wiki_service.search_wiki(
-        db, query=kwargs["query"], top_k=kwargs.get("top_k", 3),
+class WriteWikiPageInput(BaseModel):
+    page_name: str = Field(
+        ...,
+        description="Page name (no .md extension). Use lowercase-hyphenated format.",
     )
-    return {"results": results, "count": len(results)}
+    content: str = Field(..., description="Full markdown content for the page.")
 
 
-async def handle_write_wiki_page(db: AsyncSession, **kwargs: Any) -> dict:
-    wiki_service.write_page(kwargs["page_name"], kwargs["content"])
-    return {"written": True, "page_name": kwargs["page_name"]}
+class WikiIndexEntry(BaseModel):
+    title: str
+    page_name: str
+    summary: str
 
 
-async def handle_update_wiki_index(db: AsyncSession, **kwargs: Any) -> dict:
-    wiki_service.update_index(kwargs["entries"])
-    return {"updated": True, "entry_count": len(kwargs["entries"])}
+class UpdateWikiIndexInput(BaseModel):
+    entries: list[WikiIndexEntry]
 
 
-# ── Tool Definitions ─────────────────────────────────────────────
-
-register_tool(ToolDefinition(
-    name="wiki_search",
-    description=(
-        "Search the personal wiki for synthesized knowledge about the user. "
-        "The wiki contains topic-organized notes compiled from past conversations — "
-        "preferences, relationships, work context, goals, routines, and more. "
-        "Returns the most relevant wiki pages."
-    ),
+@tool(
+    tier=ActionTier.READ_ONLY,
+    category="wiki",
     embedding_text=(
         "wiki: wiki_search — search personal wiki, notes, knowledge base, "
         "what do I know about, information about me, my life, preferences, "
         "relationships, history, memories, what I've mentioned before, "
         "context, background, personal details"
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "query": {"type": "string", "description": "Search query."},
-            "top_k": {"type": "integer", "description": "Max results (default 3)."},
-        },
-        "required": ["query"],
-    },
-    tier=ActionTier.READ_ONLY,
-    handler=handle_wiki_search,
-    category="wiki",
-))
+)
+async def wiki_search(db: AsyncSession, input: WikiSearchInput) -> dict:
+    """Search the personal wiki for synthesized knowledge about the user.
 
-register_tool(ToolDefinition(
-    name="write_wiki_page",
-    description=(
-        "Create or overwrite a wiki page. Used during nightly wiki compilation "
-        "to persist synthesized knowledge from conversations."
-    ),
+    The wiki contains topic-organized notes compiled from past conversations —
+    preferences, relationships, work context, goals, routines, and more.
+    Returns the most relevant wiki pages.
+    """
+    results = await wiki_service.search_wiki(db, query=input.query, top_k=input.top_k)
+    return {"results": results, "count": len(results)}
+
+
+@tool(
+    tier=ActionTier.LOW_STAKES,
+    category="wiki",
     embedding_text=(
         "wiki: write_wiki_page — write, create, update wiki page, "
         "save knowledge, persist notes, compile information"
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "page_name": {"type": "string", "description": "Page name (no .md extension). Use lowercase-hyphenated format."},
-            "content": {"type": "string", "description": "Full markdown content for the page."},
-        },
-        "required": ["page_name", "content"],
-    },
-    tier=ActionTier.LOW_STAKES,
-    handler=handle_write_wiki_page,
-    category="wiki",
-))
+)
+async def write_wiki_page(db: AsyncSession, input: WriteWikiPageInput) -> dict:
+    """Create or overwrite a wiki page.
 
-register_tool(ToolDefinition(
-    name="update_wiki_index",
-    description=(
-        "Update the wiki index with current page listings. Each entry has a "
-        "title, page_name, and one-line summary."
-    ),
+    Used during nightly wiki compilation to persist synthesized knowledge
+    from conversations.
+    """
+    wiki_service.write_page(input.page_name, input.content)
+    return {"written": True, "page_name": input.page_name}
+
+
+@tool(
+    tier=ActionTier.LOW_STAKES,
+    category="wiki",
     embedding_text=(
         "wiki: update_wiki_index — update index, catalog, page listing"
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "entries": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string"},
-                        "page_name": {"type": "string"},
-                        "summary": {"type": "string"},
-                    },
-                    "required": ["title", "page_name", "summary"],
-                },
-            },
-        },
-        "required": ["entries"],
-    },
-    tier=ActionTier.LOW_STAKES,
-    handler=handle_update_wiki_index,
-    category="wiki",
-))
+)
+async def update_wiki_index(db: AsyncSession, input: UpdateWikiIndexInput) -> dict:
+    """Update the wiki index with current page listings.
+
+    Each entry has a title, page_name, and one-line summary.
+    """
+    entries = [e.model_dump() for e in input.entries]
+    wiki_service.update_index(entries)
+    return {"updated": True, "entry_count": len(entries)}
