@@ -11,111 +11,137 @@ Registered tools:
   - create_sub_todos    (HIGH_STAKES)-- create multiple children under a parent
 """
 
-from typing import Any
+from typing import Literal
 
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agent.tools.registry import ActionTier, ToolDefinition, register_tool
+from app.agent.tools.registry import ActionTier, tool
 from app.services import todos as todo_service
 
 
-# ── Handlers ──────────────────────────────────────────────────────
+Status = Literal["backlog", "scheduled", "completed", "cancelled"]
+Priority = Literal["low", "medium", "high", "urgent"]
+Window = Literal["morning", "afternoon", "evening"]
+EnergyLevel = Literal["low", "medium", "high"]
 
 
-async def handle_get_todos(db: AsyncSession, **kwargs: Any) -> dict:
-    filters = kwargs.get("filters", {})
-    results = await todo_service.get_todos(db, filters)
-    return {"todos": results, "count": len(results)}
+class DateRange(BaseModel):
+    start: str
+    end: str
 
 
-async def handle_create_todo(db: AsyncSession, **kwargs: Any) -> dict:
-    return await todo_service.create_todo(db, **kwargs)
-
-
-async def handle_update_todo(db: AsyncSession, **kwargs: Any) -> dict:
-    todo_id = kwargs.pop("todo_id")
-    fields = kwargs.get("fields", kwargs)
-
-    # Route "backlog" status to the dedicated send_to_backlog service,
-    # which clears schedule, deletes calendar event, and increments deferred_count.
-    if fields.get("status") == "backlog":
-        result = await todo_service.send_to_backlog(
-            db, todo_id, notes=fields.get("completion_notes"),
-        )
-        if result is None:
-            return {"error": "Todo not found"}
-        return result
-
-    result = await todo_service.update_todo(db, todo_id, fields)
-    if result is None:
-        return {"error": "Todo not found"}
-    return result
-
-
-
-async def handle_get_todo_detail(db: AsyncSession, **kwargs: Any) -> dict:
-    result = await todo_service.get_todo_detail(db, kwargs["todo_id"])
-    if result is None:
-        return {"error": "Todo not found"}
-    return result
-
-
-async def handle_create_sub_todos(db: AsyncSession, **kwargs: Any) -> dict:
-    results = await todo_service.create_child_todos_batch(
-        db, kwargs["parent_todo_id"], kwargs["children"]
+class TodoFilters(BaseModel):
+    status: Status | None = None
+    priority: Priority | None = None
+    deadline_before: str | None = Field(None, description="ISO datetime.")
+    tags: list[str] | None = None
+    scheduled_date: str | None = Field(
+        None, description="ISO date. Returns todos scheduled on this day."
     )
-    return {"children": results, "count": len(results)}
+    date_range: DateRange | None = None
+    parent_todo_id: str | None = Field(
+        None, description="UUID. Returns children of this todo."
+    )
+    is_scheduled: bool | None = Field(
+        None, description="True = has scheduled times, False = backlog only."
+    )
 
 
+class GetTodosInput(BaseModel):
+    filters: TodoFilters | None = None
 
-# ── Tool Definitions ─────────────────────────────────────────────
 
-register_tool(ToolDefinition(
-    name="get_todos",
-    description="Get todos, optionally filtered by status, priority, schedule, or date.",
+class CreateTodoInput(BaseModel):
+    title: str
+    description: str | None = None
+    priority: Priority | None = None
+    deadline: str | None = Field(None, description="ISO datetime.")
+    target_date: str | None = Field(None, description="ISO datetime, soft target.")
+    preferred_window: Window | None = None
+    estimated_duration_minutes: int | None = None
+    energy_level: EnergyLevel | None = None
+    location: str | None = None
+    tags: list[str] | None = None
+    parent_todo_id: str | None = Field(
+        None, description="UUID of parent todo for sub-todos."
+    )
+    scheduled_start: str | None = Field(
+        None,
+        description=(
+            "ISO datetime. If provided with scheduled_end, creates a "
+            "scheduled todo with calendar event."
+        ),
+    )
+    scheduled_end: str | None = Field(
+        None, description="ISO datetime. Required if scheduled_start is provided."
+    )
+
+
+class UpdateTodoFields(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: Status | None = None
+    priority: Priority | None = None
+    deadline: str | None = None
+    target_date: str | None = None
+    preferred_window: str | None = None
+    estimated_duration_minutes: int | None = None
+    energy_level: EnergyLevel | None = None
+    location: str | None = None
+    tags: list[str] | None = None
+    notes: str | None = None
+    scheduled_start: str | None = None
+    scheduled_end: str | None = None
+    actual_duration_minutes: int | None = None
+    completion_notes: str | None = None
+
+
+class UpdateTodoInput(BaseModel):
+    todo_id: str
+    fields: UpdateTodoFields
+
+
+class GetTodoDetailInput(BaseModel):
+    todo_id: str
+
+
+class SubTodo(BaseModel):
+    title: str
+    description: str | None = None
+    scheduled_start: str | None = None
+    scheduled_end: str | None = None
+    estimated_duration_minutes: int | None = None
+
+
+class CreateSubTodosInput(BaseModel):
+    parent_todo_id: str
+    children: list[SubTodo]
+
+
+# ── Tool definitions ─────────────────────────────────────────────
+
+
+@tool(
+    tier=ActionTier.READ_ONLY,
+    category="todo",
     embedding_text=(
         "todo: get_todos — list, view, check, show todos, backlog items, projects, "
         "scheduled items, agenda. What's on my todo list? Show my backlog. "
         "What do I need to do? What's on my agenda today? What tasks are scheduled? "
         "Any high-priority items? What are my active projects?"
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "filters": {
-                "type": "object",
-                "properties": {
-                    "status": {"type": "string", "enum": ["backlog", "scheduled", "completed", "cancelled"]},
-                    "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
-                    "deadline_before": {"type": "string", "description": "ISO datetime."},
-                    "tags": {"type": "array", "items": {"type": "string"}},
-                    "scheduled_date": {"type": "string", "description": "ISO date. Returns todos scheduled on this day."},
-                    "date_range": {
-                        "type": "object",
-                        "properties": {
-                            "start": {"type": "string"},
-                            "end": {"type": "string"},
-                        },
-                        "required": ["start", "end"],
-                    },
-                    "parent_todo_id": {"type": "string", "description": "UUID. Returns children of this todo."},
-                    "is_scheduled": {"type": "boolean", "description": "True = has scheduled times, False = backlog only."},
-                },
-            },
-        },
-    },
-    tier=ActionTier.READ_ONLY,
-    handler=handle_get_todos,
-    category="todo",
-))
+)
+async def get_todos(db: AsyncSession, input: GetTodosInput) -> dict:
+    """Get todos, optionally filtered by status, priority, schedule, or date."""
+    filters = input.filters.model_dump(exclude_none=True) if input.filters else {}
+    results = await todo_service.get_todos(db, filters)
+    return {"todos": results, "count": len(results)}
 
-register_tool(ToolDefinition(
-    name="create_todo",
-    description=(
-        "Create a new todo. If scheduled_start and scheduled_end are provided, "
-        "it becomes 'scheduled' with a calendar event created automatically. "
-        "Otherwise it starts as 'backlog'."
-    ),
+
+@tool(
+    tier=ActionTier.LOW_STAKES,
+    category="todo",
     embedding_text=(
         "todo: create_todo — create, add, new todo, backlog item, project, goal, "
         "schedule, calendar. Add this to my todo list. I need to remember to do X. "
@@ -123,42 +149,19 @@ register_tool(ToolDefinition(
         "Put Z on my calendar. Block off Friday afternoon. "
         "Schedule a meeting with John at 3pm. Book a calendar event."
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "title": {"type": "string"},
-            "description": {"type": "string"},
-            "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
-            "deadline": {"type": "string", "description": "ISO datetime."},
-            "target_date": {"type": "string", "description": "ISO datetime, soft target."},
-            "preferred_window": {"type": "string", "enum": ["morning", "afternoon", "evening"]},
-            "estimated_duration_minutes": {"type": "integer"},
-            "energy_level": {"type": "string", "enum": ["low", "medium", "high"]},
-            "location": {"type": "string"},
-            "tags": {"type": "array", "items": {"type": "string"}},
-            "parent_todo_id": {"type": "string", "description": "UUID of parent todo for sub-todos."},
-            "scheduled_start": {"type": "string", "description": "ISO datetime. If provided with scheduled_end, creates a scheduled todo with calendar event."},
-            "scheduled_end": {"type": "string", "description": "ISO datetime. Required if scheduled_start is provided."},
-        },
-        "required": ["title"],
-    },
-    tier=ActionTier.LOW_STAKES,
-    handler=handle_create_todo,
-    category="todo",
-))
+)
+async def create_todo(db: AsyncSession, input: CreateTodoInput) -> dict:
+    """Create a new todo.
 
-register_tool(ToolDefinition(
-    name="update_todo",
-    description=(
-        "Update fields on an existing todo. Handles all status transitions: "
-        "setting status to 'completed' cascades completion to children, deletes "
-        "calendar events, and auto-completes parent if all siblings are done. "
-        "Setting status to 'cancelled' deletes the calendar event. "
-        "Setting status to 'backlog' clears the schedule, deletes the calendar "
-        "event, and moves the todo back to the backlog. "
-        "Changing scheduled times on an already-scheduled todo tracks it as a reschedule. "
-        "Calendar events sync automatically with schedule changes."
-    ),
+    If scheduled_start and scheduled_end are provided, it becomes 'scheduled'
+    with a calendar event created automatically. Otherwise it starts as 'backlog'.
+    """
+    return await todo_service.create_todo(db, **input.model_dump(exclude_none=True))
+
+
+@tool(
+    tier=ActionTier.LOW_STAKES,
+    category="todo",
     embedding_text=(
         "todo: update_todo — edit, change, modify, update a todo's title, description, "
         "priority, deadline, tags, status, schedule. Change the priority to urgent. "
@@ -171,88 +174,66 @@ register_tool(ToolDefinition(
         "Move to backlog, unschedule, push this back, defer this, "
         "remove from schedule, take this off the calendar."
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "todo_id": {"type": "string"},
-            "fields": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
-                    "status": {"type": "string", "enum": ["backlog", "scheduled", "completed", "cancelled"]},
-                    "priority": {"type": "string", "enum": ["low", "medium", "high", "urgent"]},
-                    "deadline": {"type": "string"},
-                    "target_date": {"type": "string"},
-                    "preferred_window": {"type": "string"},
-                    "estimated_duration_minutes": {"type": "integer"},
-                    "energy_level": {"type": "string", "enum": ["low", "medium", "high"]},
-                    "location": {"type": "string"},
-                    "tags": {"type": "array", "items": {"type": "string"}},
-                    "notes": {"type": "string"},
-                    "scheduled_start": {"type": "string"},
-                    "scheduled_end": {"type": "string"},
-                    "actual_duration_minutes": {"type": "integer"},
-                    "completion_notes": {"type": "string"},
-                },
-            },
-        },
-        "required": ["todo_id", "fields"],
-    },
-    tier=ActionTier.LOW_STAKES,
-    handler=handle_update_todo,
-    category="todo",
-))
+)
+async def update_todo(db: AsyncSession, input: UpdateTodoInput) -> dict:
+    """Update fields on an existing todo.
 
-register_tool(ToolDefinition(
-    name="get_todo_detail",
-    description="Get full details of a todo including all its children.",
+    Handles all status transitions: setting status to 'completed' cascades
+    completion to children, deletes calendar events, and auto-completes parent
+    if all siblings are done. Setting status to 'cancelled' deletes the calendar
+    event. Setting status to 'backlog' clears the schedule, deletes the calendar
+    event, and moves the todo back to the backlog. Changing scheduled times on
+    an already-scheduled todo tracks it as a reschedule. Calendar events sync
+    automatically with schedule changes.
+    """
+    fields = input.fields.model_dump(exclude_none=True)
+
+    if fields.get("status") == "backlog":
+        result = await todo_service.send_to_backlog(
+            db, input.todo_id, notes=fields.get("completion_notes"),
+        )
+        if result is None:
+            return {"error": "Todo not found"}
+        return result
+
+    result = await todo_service.update_todo(db, input.todo_id, fields)
+    if result is None:
+        return {"error": "Todo not found"}
+    return result
+
+
+@tool(
+    tier=ActionTier.READ_ONLY,
+    category="todo",
     embedding_text=(
         "todo: get_todo_detail — view todo details, children, sub-items for a "
         "specific todo. Show me the details of that project. What sub-items are under this todo?"
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "todo_id": {"type": "string"},
-        },
-        "required": ["todo_id"],
-    },
-    tier=ActionTier.READ_ONLY,
-    handler=handle_get_todo_detail,
-    category="todo",
-))
+)
+async def get_todo_detail(db: AsyncSession, input: GetTodoDetailInput) -> dict:
+    """Get full details of a todo including all its children."""
+    result = await todo_service.get_todo_detail(db, input.todo_id)
+    if result is None:
+        return {"error": "Todo not found"}
+    return result
 
-register_tool(ToolDefinition(
-    name="create_sub_todos",
-    description="Create multiple child todos under a parent (requires confirmation). Calendar events are created automatically for children with scheduled times.",
+
+@tool(
+    tier=ActionTier.HIGH_STAKES,
+    category="todo",
     embedding_text=(
         "todo: create_sub_todos — create multiple sub-items at once, batch schedule, "
         "plan several work blocks for a project. Break this todo into steps across the week."
     ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "parent_todo_id": {"type": "string"},
-            "children": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "title": {"type": "string"},
-                        "description": {"type": "string"},
-                        "scheduled_start": {"type": "string"},
-                        "scheduled_end": {"type": "string"},
-                        "estimated_duration_minutes": {"type": "integer"},
-                    },
-                    "required": ["title"],
-                },
-            },
-        },
-        "required": ["parent_todo_id", "children"],
-    },
-    tier=ActionTier.HIGH_STAKES,
-    handler=handle_create_sub_todos,
-    category="todo",
-))
+)
+async def create_sub_todos(db: AsyncSession, input: CreateSubTodosInput) -> dict:
+    """Create multiple child todos under a parent.
 
+    Requires confirmation. Calendar events are created automatically for
+    children with scheduled times.
+    """
+    children = [c.model_dump(exclude_none=True) for c in input.children]
+    results = await todo_service.create_child_todos_batch(
+        db, input.parent_todo_id, children
+    )
+    return {"children": results, "count": len(results)}
