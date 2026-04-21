@@ -1,0 +1,14 @@
+## Plan
+{{ plan.goal }}
+
+### Steps
+{% for step in plan.steps %}
+{{ loop.index }}. {{ step }}
+{% endfor %}
+
+Follow this plan as guidance — it's what you should work through, not a rigid
+script. Call the `advance_to_step` tool at the start of each step (before the
+real tool calls for that step) with the 1-based `step_index`. If the plan
+needs to change and you're doing something not covered by a step, call
+`advance_to_step` with `step_index: null` and a short `note` describing what
+you're doing instead.

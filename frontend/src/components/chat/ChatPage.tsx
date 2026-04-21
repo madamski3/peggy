@@ -15,6 +15,9 @@ export default function ChatPage() {
     isLoading,
     error,
     statusMessage,
+    activePlan,
+    activeStepIndex,
+    activeStepText,
     sendMessage,
     confirmAction,
     rejectAction,
@@ -38,6 +41,9 @@ export default function ChatPage() {
         isLoading={isLoading}
         error={error}
         statusMessage={statusMessage}
+        activePlan={activePlan}
+        activeStepIndex={activeStepIndex}
+        activeStepText={activeStepText}
         onFollowUp={sendMessage}
         onConfirm={confirmAction}
         onReject={rejectAction}

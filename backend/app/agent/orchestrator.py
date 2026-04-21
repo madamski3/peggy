@@ -59,6 +59,8 @@ from app.schemas.agent import (
     ActionTaken,
     ChatResponse,
     ConfirmationRequired,
+    StatusEvent,
+    TurnPlan,
 )
 from app.services.conversations import (
     backfill_llm_call_interaction_id,
@@ -73,7 +75,7 @@ logger = logging.getLogger(__name__)
 import app.agent.tools  # noqa: F401
 
 # Type alias for the optional streaming status callback
-StatusCallback = Callable[[str], Coroutine[Any, Any, None]]
+StatusCallback = Callable[[StatusEvent], Coroutine[Any, Any, None]]
 
 # Friendly labels for tool names in status messages
 _TOOL_STATUS_LABELS: dict[str, str] = {
@@ -101,6 +103,19 @@ _TOOL_STATUS_LABELS: dict[str, str] = {
 def _tool_status_label(tool_name: str) -> str:
     """Get a user-friendly status label for a tool call."""
     return _TOOL_STATUS_LABELS.get(tool_name, f"Running {tool_name.replace('_', ' ')}")
+
+
+def _resolve_step_text(plan: TurnPlan, step_index: int | None, note: str | None) -> str:
+    """Resolve the label to display for an advance_to_step call.
+
+    Prefers the matching plan step text when `step_index` is valid; falls back
+    to `note` (off-plan work) or a generic label if neither is available.
+    """
+    if step_index is not None and 1 <= step_index <= len(plan.steps):
+        return plan.steps[step_index - 1]
+    if note:
+        return note
+    return "Working..."
 
 
 async def run_agent_loop(
@@ -185,7 +200,11 @@ async def run_agent_loop(
         logger.info(f"Planner: effort={plan.result.effort}, components={plan.result.components}")
 
         if status_callback:
-            await status_callback("Thinking...")
+            if plan.result.plan.goal or plan.result.plan.steps:
+                await status_callback(
+                    StatusEvent(kind="plan", plan=plan.result.plan)
+                )
+            await status_callback(StatusEvent(kind="message", message="Thinking..."))
 
         # Force-include channel-specific tools that the vector selector may miss
         _CHANNEL_REQUIRED_TOOLS: dict[str, set[str]] = {
@@ -207,7 +226,7 @@ async def run_agent_loop(
             logger.info(f"Tool selection mode: all ({len(selected_tool_names)} tools)")
 
         # ── Step A.3: Compose system prompt from relevant components ──
-        context["strategy"] = plan.result.strategy
+        context["plan"] = plan.result.plan.model_dump()
         composed = await compose_and_persist_prompt(
             db,
             context=context,
@@ -240,7 +259,9 @@ async def run_agent_loop(
 
             # Emit "composing" status on subsequent rounds (after tool results)
             if status_callback and round_num > 0:
-                await status_callback("Composing response...")
+                await status_callback(
+                    StatusEvent(kind="message", message="Composing response...")
+                )
 
             with trace_observation(
                 name=f"main-llm-round-{round_num + 1}",
@@ -308,9 +329,23 @@ async def run_agent_loop(
 
                         logger.info(f"Tool call: {tool_name} (tier={tier.value})")
 
-                        # Emit status for the tool being called
-                        if status_callback:
-                            await status_callback(f"{_tool_status_label(tool_name)}...")
+                        # advance_to_step is a meta-tool: emit a structured
+                        # step event for the UI to light up progress, then
+                        # fall through to the normal (no-op) handler call.
+                        if tool_name == "advance_to_step" and status_callback:
+                            idx = tool_input.get("step_index")
+                            note = tool_input.get("note")
+                            step_text = _resolve_step_text(plan.result.plan, idx, note)
+                            await status_callback(StatusEvent(
+                                kind="step",
+                                step_index=idx,
+                                step_text=step_text,
+                            ))
+                        elif status_callback:
+                            await status_callback(StatusEvent(
+                                kind="message",
+                                message=f"{_tool_status_label(tool_name)}...",
+                            ))
 
                         # HIGH_STAKES check — halt and request confirmation
                         if tier == ActionTier.HIGH_STAKES:

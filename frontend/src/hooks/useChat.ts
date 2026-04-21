@@ -18,7 +18,19 @@
  */
 import { useState, useCallback, useRef } from "react";
 import { generateId } from "../utils/id";
-import type { ChatMessage, ChatRequest, ChatResponse } from "../types/chat";
+import type {
+  ChatMessage,
+  ChatRequest,
+  ChatResponse,
+  StepEvent,
+  TurnPlan,
+} from "../types/chat";
+
+interface StreamCallbacks {
+  onStatus: (message: string) => void;
+  onPlan: (plan: TurnPlan) => void;
+  onStep: (step: StepEvent) => void;
+}
 
 interface UseChatReturn {
   messages: ChatMessage[];
@@ -26,6 +38,9 @@ interface UseChatReturn {
   isLoading: boolean;
   error: string | null;
   statusMessage: string | null;
+  activePlan: TurnPlan | null;
+  activeStepIndex: number | null;
+  activeStepText: string | null;
   sendMessage: (text: string) => Promise<void>;
   confirmAction: (confirmationId: string) => Promise<void>;
   rejectAction: () => Promise<void>;
@@ -51,7 +66,7 @@ async function postChat(body: ChatRequest): Promise<ChatResponse> {
  */
 async function streamChat(
   body: ChatRequest,
-  onStatus: (message: string) => void,
+  callbacks: StreamCallbacks,
 ): Promise<ChatResponse> {
   const res = await fetch("/api/chat/stream", {
     method: "POST",
@@ -99,7 +114,11 @@ async function streamChat(
         const parsed = JSON.parse(data);
 
         if (eventType === "status") {
-          onStatus(parsed.message);
+          callbacks.onStatus(parsed.message);
+        } else if (eventType === "plan") {
+          callbacks.onPlan(parsed as TurnPlan);
+        } else if (eventType === "step") {
+          callbacks.onStep(parsed as StepEvent);
         } else if (eventType === "complete") {
           result = parsed as ChatResponse;
         } else if (eventType === "error") {
@@ -122,9 +141,19 @@ export function useChat(): UseChatReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [activePlan, setActivePlan] = useState<TurnPlan | null>(null);
+  const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
+  const [activeStepText, setActiveStepText] = useState<string | null>(null);
 
   // Track the last user message for confirmation re-sends
   const lastUserMessage = useRef<string>("");
+
+  const resetProgress = useCallback(() => {
+    setStatusMessage(null);
+    setActivePlan(null);
+    setActiveStepIndex(null);
+    setActiveStepText(null);
+  }, []);
 
   const handleResponse = useCallback((response: ChatResponse) => {
     setSessionId(response.session_id);
@@ -146,7 +175,7 @@ export function useChat(): UseChatReturn {
 
       lastUserMessage.current = trimmed;
       setError(null);
-      setStatusMessage(null);
+      resetProgress();
 
       // Append user message
       const userMsg: ChatMessage = {
@@ -164,11 +193,22 @@ export function useChat(): UseChatReturn {
 
         // Try SSE streaming first, fall back to standard POST
         try {
-          const response = await streamChat(body, setStatusMessage);
+          const response = await streamChat(body, {
+            onStatus: setStatusMessage,
+            onPlan: (plan) => {
+              setActivePlan(plan);
+              setActiveStepIndex(null);
+              setActiveStepText(null);
+            },
+            onStep: (step) => {
+              setActiveStepIndex(step.step_index);
+              setActiveStepText(step.step_text);
+            },
+          });
           handleResponse(response);
         } catch {
           // SSE failed — fall back to non-streaming
-          setStatusMessage(null);
+          resetProgress();
           const response = await postChat(body);
           handleResponse(response);
         }
@@ -177,16 +217,16 @@ export function useChat(): UseChatReturn {
         setError(msg);
       } finally {
         setIsLoading(false);
-        setStatusMessage(null);
+        resetProgress();
       }
     },
-    [sessionId, handleResponse],
+    [sessionId, handleResponse, resetProgress],
   );
 
   const confirmAction = useCallback(
     async (confirmationId: string) => {
       setError(null);
-      setStatusMessage(null);
+      resetProgress();
       setIsLoading(true);
 
       try {
@@ -204,10 +244,10 @@ export function useChat(): UseChatReturn {
         setError(msg);
       } finally {
         setIsLoading(false);
-        setStatusMessage(null);
+        resetProgress();
       }
     },
-    [sessionId, handleResponse],
+    [sessionId, handleResponse, resetProgress],
   );
 
   const rejectAction = useCallback(async () => {
@@ -219,9 +259,9 @@ export function useChat(): UseChatReturn {
     setSessionId(null);
     setError(null);
     setIsLoading(false);
-    setStatusMessage(null);
+    resetProgress();
     lastUserMessage.current = "";
-  }, []);
+  }, [resetProgress]);
 
   return {
     messages,
@@ -229,6 +269,9 @@ export function useChat(): UseChatReturn {
     isLoading,
     error,
     statusMessage,
+    activePlan,
+    activeStepIndex,
+    activeStepText,
     sendMessage,
     confirmAction,
     rejectAction,

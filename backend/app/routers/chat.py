@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.orchestrator import run_agent_loop
 from app.database import get_db
-from app.schemas.agent import ChatRequest, ChatResponse
+from app.schemas.agent import ChatRequest, ChatResponse, StatusEvent
 
 logger = logging.getLogger(__name__)
 
@@ -54,16 +54,28 @@ async def chat_stream(
     """Send a message and receive real-time status updates via SSE.
 
     Emits Server-Sent Events as the agent progresses through its loop:
-      event: status   -- progress updates ("Checking your calendar...")
+      event: status   -- free-text progress ("Checking your calendar...")
+      event: plan     -- the planner's plan ({goal, steps}) for this turn
+      event: step     -- the agent has advanced to a step
       event: complete -- final ChatResponse JSON
 
     The frontend should fall back to the standard /api/chat/ endpoint
     if the SSE connection fails.
     """
-    status_queue: asyncio.Queue[str] = asyncio.Queue()
+    status_queue: asyncio.Queue[StatusEvent] = asyncio.Queue()
 
-    async def status_callback(message: str) -> None:
-        await status_queue.put(message)
+    async def status_callback(event: StatusEvent) -> None:
+        await status_queue.put(event)
+
+    def serialize(event: StatusEvent) -> str:
+        if event.kind == "plan" and event.plan is not None:
+            payload = event.plan.model_dump(mode="json")
+            return f"event: plan\ndata: {json.dumps(payload)}\n\n"
+        if event.kind == "step":
+            payload = {"step_index": event.step_index, "step_text": event.step_text}
+            return f"event: step\ndata: {json.dumps(payload)}\n\n"
+        # kind == "message"
+        return f"event: status\ndata: {json.dumps({'message': event.message or ''})}\n\n"
 
     async def generate():
         # Run the agent loop in a background task so we can stream
@@ -88,17 +100,17 @@ async def chat_stream(
                 try:
                     # Wait for status updates with a short timeout so
                     # we can check if the task completed
-                    message = await asyncio.wait_for(
+                    event = await asyncio.wait_for(
                         status_queue.get(), timeout=0.5,
                     )
-                    yield f"event: status\ndata: {json.dumps({'message': message})}\n\n"
+                    yield serialize(event)
                 except asyncio.TimeoutError:
                     continue
 
             # Drain any remaining status messages
             while not status_queue.empty():
-                message = status_queue.get_nowait()
-                yield f"event: status\ndata: {json.dumps({'message': message})}\n\n"
+                event = status_queue.get_nowait()
+                yield serialize(event)
 
             # Get the final response
             response: ChatResponse = loop_task.result()

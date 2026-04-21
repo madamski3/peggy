@@ -9,15 +9,19 @@
  * Auto-scrolls to the bottom on new messages.
  */
 import { useEffect, useRef } from "react";
-import type { ChatMessage } from "../../types/chat";
+import type { ChatMessage, TurnPlan } from "../../types/chat";
 import UserMessage from "./UserMessage";
 import AssistantMessage from "./AssistantMessage";
+import PlanProgress from "./PlanProgress";
 
 interface Props {
   messages: ChatMessage[];
   isLoading: boolean;
   error: string | null;
   statusMessage: string | null;
+  activePlan: TurnPlan | null;
+  activeStepIndex: number | null;
+  activeStepText: string | null;
   onFollowUp: (text: string) => void;
   onConfirm: (confirmationId: string) => void;
   onReject: () => void;
@@ -46,6 +50,9 @@ export default function MessageList({
   isLoading,
   error,
   statusMessage,
+  activePlan,
+  activeStepIndex,
+  activeStepText,
   onFollowUp,
   onConfirm,
   onReject,
@@ -112,6 +119,19 @@ export default function MessageList({
             </div>
           </div>
         ))}
+
+        {/* Plan progress (steps check off as the agent works through them) */}
+        {isLoading && activePlan && (activePlan.goal || activePlan.steps.length > 0) && (
+          <div className="flex justify-start">
+            <div className="max-w-xl w-full">
+              <PlanProgress
+                plan={activePlan}
+                activeStepIndex={activeStepIndex}
+                activeStepText={activeStepText}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Loading indicator with status message */}
         {isLoading && (

@@ -34,3 +34,13 @@ export interface ChatMessage {
   // Only present on assistant messages
   response?: ChatResponse;
 }
+
+export interface TurnPlan {
+  goal: string;
+  steps: string[];
+}
+
+export interface StepEvent {
+  step_index: number | null;
+  step_text: string | null;
+}

@@ -1,12 +1,13 @@
-"""LLM-based planner for strategy generation.
+"""LLM-based planner for structured plan generation.
 
 Lightweight Haiku call that produces:
-  - strategy: natural-language approach guidance injected into the system prompt
+  - plan: a structured {goal, steps} the main agent should work through
   - effort: recommended thinking effort level
+  - components: optional prompt sections to activate
 
-Tool selection is handled separately by tool_selector.py (vector search).
-The planner focuses purely on strategy — what approach the main LLM should
-take, injected via the {{ strategy }} variable in system_v2.yaml.
+The plan is injected into the system prompt via the `plan` component; the
+main agent calls the `advance_to_step` tool to signal progress against the
+plan so the UI can render live step-by-step progress.
 """
 
 import hashlib
@@ -25,34 +26,47 @@ from app.observability.langfuse_client import (
     trace_observation,
 )
 from app.prompts.composer import ActiveComponent
+from app.schemas.agent import TurnPlan
 
 logger = logging.getLogger(__name__)
 
 _PLANNER_SYSTEM_PROMPT = """\
-You are a strategy planner for a personal assistant. Your job is to analyze the \
-user's message and conversation context, then decide what approach the assistant \
-should take.
+You are a planner for a personal assistant. Your job is to analyze the user's \
+message and conversation context, then produce a short plan the main assistant \
+will work through.
 
 The assistant has access to tools for: calendar, todos/tasks, email, lists, \
 personal profile/knowledge, daily planning, and conversation history. Tool \
-selection is handled automatically — you only need to provide strategy.
+selection is handled automatically — you only need to produce the plan.
 
 ## Output Format
 Respond with a JSON object (no markdown fences, no extra text):
 
 {
-  "strategy": "2-5 sentences of approach guidance...",
+  "plan": {
+    "goal": "one sentence framing what the user wants",
+    "steps": ["step 1 in plain prose", "step 2 ...", ...]
+  },
   "effort": "low|medium|high",
   "components": []
 }
 
 ## Field Instructions
 
-**strategy**: Concise guidance for the main assistant — what to do, in what \
-order, and what to prioritize. This is context and direction, not a rigid \
-script. The assistant has its own judgment and tool-calling ability; your \
-strategy helps it start on the right track. Focus on the *what* and *why*, \
-not the exact tool calls.
+**plan.goal**: A single sentence capturing what the user is trying to accomplish \
+overall. This orients the assistant.
+
+**plan.steps**: An ordered list of high-level, natural-language steps the \
+assistant should work through. Keep steps at the "what and why" altitude, not \
+the "which tool call" altitude — the assistant has its own judgment and knows \
+which tools to use. Aim for 1–5 steps; simple requests may have just one.
+
+Good step: "Clarify which institution administers each 401k plan."
+Good step: "Create Todos for each step of the rollover process."
+Bad step: "Call the search_profile tool with query='401k'."
+
+For trivial requests ("what time is it?"), a single-step plan like \
+["Answer the question directly"] is fine. Do not pad.
 
 **effort**: Recommended thinking effort for the main assistant.
 - "low": Simple lookups or single-domain queries (e.g. "what's on my calendar?")
@@ -86,7 +100,7 @@ def planner_component() -> ActiveComponent:
 class PlannerResult(BaseModel):
     """Structured output from the planner LLM."""
 
-    strategy: str
+    plan: TurnPlan = TurnPlan()
     effort: str = "medium"
     components: list[str] = []
 
@@ -102,7 +116,7 @@ class PlannerOutput:
 def _fallback() -> PlannerOutput:
     """Return a safe fallback when the planner fails."""
     return PlannerOutput(
-        result=PlannerResult(strategy="", effort="medium"),
+        result=PlannerResult(plan=TurnPlan(), effort="medium"),
         raw_response=None,
     )
 
@@ -168,7 +182,7 @@ async def run_planner(
     except (json.JSONDecodeError, TypeError, ValueError) as e:
         logger.warning(f"Planner response parse failed: {e} — raw: {text[:200]}")
         return PlannerOutput(
-            result=PlannerResult(strategy="", effort="medium"),
+            result=PlannerResult(plan=TurnPlan(), effort="medium"),
             raw_response=response,
         )
 

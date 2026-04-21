@@ -11,6 +11,7 @@ from app.agent.tools import (  # noqa: F401
     conversation_tools,
     gmail_tools,
     list_tools,
+    meta_tools,
     planning_tools,
     profile_tools,
     reminder_tools,

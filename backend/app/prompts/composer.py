@@ -7,7 +7,7 @@ Assembles the system prompt from granular component files based on:
   - Derived components (response format variant)
 
 Each component lives in prompts/components/*.txt and is rendered with
-Jinja2 for variable interpolation ({{ user_name }}, {{ strategy }}, etc.).
+Jinja2 for variable interpolation ({{ user_name }}, {{ plan }}, etc.).
 
 Component versioning: every active component is content-hashed (SHA-256 of
 its raw pre-Jinja text) and returned alongside the rendered prompt so the
@@ -41,7 +41,7 @@ _COMPOSITION_ORDER = [
     "wiki_review",
     "daily_planning",
     "schedule_overview",
-    "strategy",
+    "plan",
     "response_format_planning",
     "response_format_default",
 ]
@@ -113,9 +113,10 @@ def _select_components(
         else:
             logger.warning("Planner selected unknown component: %s", name)
 
-    # Strategy (only if non-empty)
-    if context.get("strategy"):
-        active.add("strategy")
+    # Plan (only if the planner produced goal or steps)
+    plan = context.get("plan") or {}
+    if plan.get("goal") or plan.get("steps"):
+        active.add("plan")
 
     # Response format — use override if a matching component is active,
     # otherwise use default
@@ -142,7 +143,7 @@ def compose_prompt(
 
     Args:
         context: Template variables (current_datetime, timezone, user_name,
-                 strategy, etc.)
+                 plan, etc.)
         planner_components: Component names selected by the planner LLM.
         channel: Interaction channel — "chat" or "proactive".
 
