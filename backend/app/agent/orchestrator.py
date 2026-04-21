@@ -285,6 +285,17 @@ async def run_agent_loop(
                 final_text = _extract_text(response.content)
                 break
 
+            # Server-side tool iteration hit a soft limit (max_uses, timeout).
+            # Echo the assistant message back so Anthropic can continue where it
+            # left off; no tool_result is needed — server tools carry their own.
+            if response.stop_reason == "pause_turn":
+                logger.info("pause_turn — continuing server-tool iteration")
+                messages.append({
+                    "role": "assistant",
+                    "content": _serialize_content(response.content),
+                })
+                continue
+
             # Process tool calls
             if response.stop_reason == "tool_use":
                 tool_results = []
@@ -519,6 +530,13 @@ def _extract_text(content: list) -> str:
     return "\n".join(parts)
 
 
+_SERVER_TOOL_BLOCK_TYPES = {
+    "server_tool_use",
+    "web_search_tool_result",
+    "web_fetch_tool_result",
+}
+
+
 def _serialize_content(content: list) -> list[dict]:
     """Serialize Anthropic content blocks for the messages list."""
     serialized = []
@@ -538,6 +556,10 @@ def _serialize_content(content: list) -> list[dict]:
                 "name": block.name,
                 "input": block.input,
             })
+        elif block.type in _SERVER_TOOL_BLOCK_TYPES:
+            # Server-side tool blocks must round-trip verbatim for pause_turn
+            # continuation. model_dump preserves all nested fields.
+            serialized.append(block.model_dump(exclude_unset=True))
     return serialized
 
 

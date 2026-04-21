@@ -25,6 +25,25 @@ logger = logging.getLogger(__name__)
 
 _client: AsyncAnthropic | None = None
 
+# Anthropic-executed server tools. These don't run in our orchestrator — the API
+# fetches results and returns them inline as server_tool_use / web_*_tool_result
+# blocks in the same response. Appended to every request so the model can always
+# reach for them when the user asks about current, external, or procedural facts.
+_SERVER_TOOLS: list[dict] = [
+    {
+        "type": "web_search_20250305",
+        "name": "web_search",
+        "max_uses": 5,
+    },
+    {
+        "type": "web_fetch_20250910",
+        "name": "web_fetch",
+        "max_uses": 5,
+        "citations": {"enabled": True},
+        "max_content_tokens": 50000,
+    },
+]
+
 
 def get_client() -> AsyncAnthropic:
     """Get or create the Anthropic async client singleton."""
@@ -91,8 +110,10 @@ async def call_llm(
         {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
     ]
 
-    # Breakpoint 2: last tool definition
-    cached_tools = list(tools)
+    # Breakpoint 2: last tool definition. Server tools are appended last so the
+    # cache breakpoint lands on a stable entry (server tool defs never vary by
+    # request, unlike the intent-filtered client tools).
+    cached_tools = list(tools) + _SERVER_TOOLS
     if cached_tools:
         cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
