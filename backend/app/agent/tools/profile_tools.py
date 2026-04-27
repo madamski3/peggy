@@ -64,7 +64,7 @@ class SearchProfileInput(BaseModel):
     ),
 )
 async def add_profile_fact(db: AsyncSession, input: AddProfileFactInput) -> dict:
-    """Add a profile fact; auto-supersedes existing fact with same category+key.
+    """Add a discrete fact about the user (preferences, contacts, household, schedule, career, identity). Use when learning new info about the user worth remembering. Auto-supersedes any existing fact with the same category+key.
 
     For people, use category='people' with key='person.<name>' and value as a
     JSON object with name, relationship_type, description, key_dates, etc.
@@ -148,11 +148,9 @@ async def update_profile_fact(db: AsyncSession, input: UpdateProfileFactInput) -
     ),
 )
 async def search_profile(db: AsyncSession, input: SearchProfileInput) -> dict:
-    """Search the user's personal knowledge base.
+    """Search the user's profile facts (atomic key-value entries about people/contacts, preferences, household, schedule, career, identity). Use this for short, specific facts — for long-form synthesized writeups use wiki_search instead.
 
-    This is the single source for ALL personal information — people/contacts/family,
-    preferences, schedule, identity, household, career, etc. Returns the most
-    relevant facts ranked by similarity.
+    Returns the most relevant facts ranked by semantic similarity.
     """
     query_embedding = await get_embedding(input.query)
 

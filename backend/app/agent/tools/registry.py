@@ -182,6 +182,47 @@ def get_capability_manifest() -> str:
     return "\n".join(lines)
 
 
+# Categories the planner shouldn't see/pick — these are auto-included by the
+# orchestrator (e.g. advance_to_step is a meta-tool the agent always has).
+_PLANNER_EXCLUDED_CATEGORIES = {"meta"}
+
+
+def get_tool_catalog_for_planner() -> str:
+    """Return a formatted tool catalog the planner LLM can pick from.
+
+    Tools are grouped by category and rendered as ``- name: description``
+    lines, where description is the first paragraph of the tool's docstring
+    (the same description the main LLM sees). Meta-tools are excluded —
+    the orchestrator always includes those automatically.
+    """
+    by_category: dict[str, list[ToolDefinition]] = {}
+    for tool_def in TOOL_REGISTRY.values():
+        if tool_def.category in _PLANNER_EXCLUDED_CATEGORIES:
+            continue
+        by_category.setdefault(tool_def.category, []).append(tool_def)
+
+    # Stable ordering: categories alphabetical, tools alphabetical within
+    lines: list[str] = []
+    for category in sorted(by_category):
+        lines.append(f"### {category}")
+        for tool_def in sorted(by_category[category], key=lambda t: t.name):
+            lines.append(f"- {tool_def.name}: {tool_def.description}")
+        lines.append("")  # blank line between categories
+    return "\n".join(lines).rstrip()
+
+
+def get_planner_selectable_tool_names() -> set[str]:
+    """Set of tool names the planner is allowed to pick from.
+
+    Mirrors `get_tool_catalog_for_planner` — meta-tools are excluded.
+    Used by the orchestrator to validate the planner's `tool_names` output.
+    """
+    return {
+        name for name, tool_def in TOOL_REGISTRY.items()
+        if tool_def.category not in _PLANNER_EXCLUDED_CATEGORIES
+    }
+
+
 # Lightweight read-only tools sent when no intents are detected.
 # Covers the most common domains so the model can answer ambiguous queries
 # without loading all 35+ tool schemas.

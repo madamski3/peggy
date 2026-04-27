@@ -51,11 +51,9 @@ class UpdateWikiIndexInput(BaseModel):
     ),
 )
 async def wiki_search(db: AsyncSession, input: WikiSearchInput) -> dict:
-    """Search the personal wiki for synthesized knowledge about the user.
+    """Search the personal wiki for synthesized long-form notes about the user (topic pages compiled from past conversations: relationships, work context, goals, routines, etc.). Use this for narrative background and context — for atomic facts (single preferences, contacts, dates) use search_profile instead.
 
-    The wiki contains topic-organized notes compiled from past conversations —
-    preferences, relationships, work context, goals, routines, and more.
-    Returns the most relevant wiki pages.
+    Returns the most relevant wiki pages by semantic similarity.
     """
     results = await wiki_service.search_wiki(db, query=input.query, top_k=input.top_k)
     return {"results": results, "count": len(results)}

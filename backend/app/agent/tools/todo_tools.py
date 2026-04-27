@@ -151,7 +151,7 @@ async def get_todos(db: AsyncSession, input: GetTodosInput) -> dict:
     ),
 )
 async def create_todo(db: AsyncSession, input: CreateTodoInput) -> dict:
-    """Create a new todo.
+    """Create a new todo. Use for one-off tasks the user wants to track or do later. Pass scheduled_start/scheduled_end to create a calendar block instead of a backlog item.
 
     If scheduled_start and scheduled_end are provided, it becomes 'scheduled'
     with a calendar event created automatically. Otherwise it starts as 'backlog'.
@@ -176,7 +176,7 @@ async def create_todo(db: AsyncSession, input: CreateTodoInput) -> dict:
     ),
 )
 async def update_todo(db: AsyncSession, input: UpdateTodoInput) -> dict:
-    """Update fields on an existing todo.
+    """Update fields on an existing todo. Use this to mark complete, cancel, reschedule, send back to backlog, or edit any field (title, priority, deadline, tags, etc.).
 
     Handles all status transitions: setting status to 'completed' cascades
     completion to children, deletes calendar events, and auto-completes parent
@@ -227,10 +227,9 @@ async def get_todo_detail(db: AsyncSession, input: GetTodoDetailInput) -> dict:
     ),
 )
 async def create_sub_todos(db: AsyncSession, input: CreateSubTodosInput) -> dict:
-    """Create multiple child todos under a parent.
+    """Create multiple child todos under a parent in one batch. Use to break a project or goal into several scheduled or backlog steps at once (requires confirmation).
 
-    Requires confirmation. Calendar events are created automatically for
-    children with scheduled times.
+    Calendar events are created automatically for children with scheduled times.
     """
     children = [c.model_dump(exclude_none=True) for c in input.children]
     results = await todo_service.create_child_todos_batch(

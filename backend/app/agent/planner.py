@@ -4,22 +4,35 @@ Lightweight Haiku call that produces:
   - plan: a structured {goal, steps} the main agent should work through
   - effort: recommended thinking effort level
   - components: optional prompt sections to activate
+  - tool_names: tools the main agent will likely need (shadow-mode in Phase 3)
 
 The plan is injected into the system prompt via the `plan` component; the
 main agent calls the `advance_to_step` tool to signal progress against the
 plan so the UI can render live step-by-step progress.
+
+The planner system prompt is built lazily on first use because it embeds a
+catalog generated from the tool registry, which is only fully populated
+once tool modules have imported.
 """
 
 import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import anthropic
 from pydantic import BaseModel
 
 from app.agent.client import get_client
 from app.agent.context import build_conversation_messages
+
+# Importing the tools package triggers @tool registrations — must happen
+# before get_tool_catalog_for_planner() runs, since the catalog reads
+# TOOL_REGISTRY. Safe: tool modules don't import back from planner.
+import app.agent.tools  # noqa: F401, E402
+
+from app.agent.tools.registry import get_tool_catalog_for_planner  # noqa: E402
 from app.globals import PLANNER_MAX_TOKENS, PLANNER_MODEL
 from app.observability.langfuse_client import (
     anthropic_usage_to_langfuse,
@@ -30,26 +43,33 @@ from app.schemas.agent import TurnPlan
 
 logger = logging.getLogger(__name__)
 
-_PLANNER_SYSTEM_PROMPT = """\
+_PLANNER_PROMPT_TEMPLATE = """\
 You are a planner for a personal assistant. Your job is to analyze the user's \
 message and conversation context, then produce a short plan the main assistant \
-will work through.
+will work through and pick the tools it will likely need.
 
-The assistant has access to tools for: calendar, todos/tasks, email, lists, \
-personal profile/knowledge, daily planning, and conversation history. Tool \
-selection is handled automatically — you only need to produce the plan.
+## Available tools
+
+The main assistant has access to the tools below, grouped by category. Pick \
+the ones you expect it to need for this turn — err on the side of including \
+a tool if you're not sure, since omitting one the agent needs is worse than \
+including an extra. A meta tool the agent uses to track plan progress is \
+always available; you don't need to list it.
+
+{tool_catalog}
 
 ## Output Format
 Respond with a JSON object (no markdown fences, no extra text):
 
-{
-  "plan": {
+{{
+  "plan": {{
     "goal": "one sentence framing what the user wants",
     "steps": ["step 1 in plain prose", "step 2 ...", ...]
-  },
+  }},
   "effort": "low|medium|high",
-  "components": []
-}
+  "components": [],
+  "tool_names": ["tool_name_1", "tool_name_2", ...]
+}}
 
 ## Field Instructions
 
@@ -78,9 +98,39 @@ Only include what's relevant — omit the rest. For simple queries, return an em
 Available components:
 - "daily_planning": User wants to plan their day, review their daily plan, or schedule their agenda
 - "schedule_overview": User is asking about their schedule, calendar, or what's coming up
+
+**tool_names**: The exact tool names from the catalog above that the assistant \
+is likely to need. Include read-only lookup tools you expect will be needed for \
+context, plus any write tools required to fulfill the request. Omit the meta \
+progress tool — it's always available. Use exact names (e.g. "create_todo", \
+not "create todo"). For trivial conversational replies, an empty list is fine.
 """
 
-PLANNER_PROMPT_ID = hashlib.sha256(_PLANNER_SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+
+@lru_cache(maxsize=1)
+def get_planner_system_prompt() -> str:
+    """Build the planner system prompt with the live tool catalog.
+
+    Cached because the registry is populated once at import time and stable
+    for the rest of the process lifetime.
+    """
+    return _PLANNER_PROMPT_TEMPLATE.format(tool_catalog=get_tool_catalog_for_planner())
+
+
+@lru_cache(maxsize=1)
+def get_planner_prompt_id() -> str:
+    """Hex SHA-256 of the rendered planner prompt — used for component versioning."""
+    return hashlib.sha256(get_planner_system_prompt().encode("utf-8")).hexdigest()
+
+
+# Backward-compatible module-level alias for code that imports PLANNER_PROMPT_ID.
+# Lazy via __getattr__ so tool registry can populate before this evaluates.
+def __getattr__(name: str):
+    if name == "PLANNER_PROMPT_ID":
+        return get_planner_prompt_id()
+    if name == "_PLANNER_SYSTEM_PROMPT":
+        return get_planner_system_prompt()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def planner_component() -> ActiveComponent:
@@ -91,8 +141,8 @@ def planner_component() -> ActiveComponent:
     """
     return ActiveComponent(
         name="planner",
-        id=PLANNER_PROMPT_ID,
-        raw_text=_PLANNER_SYSTEM_PROMPT,
+        id=get_planner_prompt_id(),
+        raw_text=get_planner_system_prompt(),
         type="planner",
     )
 
@@ -103,6 +153,7 @@ class PlannerResult(BaseModel):
     plan: TurnPlan = TurnPlan()
     effort: str = "medium"
     components: list[str] = []
+    tool_names: list[str] = []
 
 
 @dataclass
@@ -136,6 +187,8 @@ async def run_planner(
         PlannerOutput with parsed result and raw API response.
     """
     messages = build_conversation_messages(user_message, conversation_history)
+    system_prompt = get_planner_system_prompt()
+    prompt_id = get_planner_prompt_id()
 
     try:
         client = get_client()
@@ -143,13 +196,13 @@ async def run_planner(
             name="planner",
             as_type="generation",
             model=PLANNER_MODEL,
-            input={"system": _PLANNER_SYSTEM_PROMPT, "messages": messages},
-            metadata={"planner_prompt_id": PLANNER_PROMPT_ID},
+            input={"system": system_prompt, "messages": messages},
+            metadata={"planner_prompt_id": prompt_id},
         ) as gen:
             response = await client.messages.create(
                 model=PLANNER_MODEL,
                 max_tokens=PLANNER_MAX_TOKENS,
-                system=_PLANNER_SYSTEM_PROMPT,
+                system=system_prompt,
                 messages=messages,
             )
             if gen is not None:

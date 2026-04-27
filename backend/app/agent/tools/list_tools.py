@@ -100,7 +100,7 @@ async def get_list_items(db: AsyncSession, input: GetListItemsInput) -> dict:
     ),
 )
 async def create_list(db: AsyncSession, input: CreateListInput) -> dict:
-    """Create a new list."""
+    """Create a new named list (e.g. groceries, packing, shopping, custom collection). Use for collections of items the user wants to track and check off; for single tasks use create_todo instead."""
     return await list_service.create_list(
         db, name=input.name, type=input.type, description=input.description,
     )

@@ -36,8 +36,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.client import call_llm
 from app.agent.context import assemble_context, build_conversation_messages, detect_intents
 from app.agent.planner import (
-    PLANNER_PROMPT_ID,
     PlannerResult,
+    get_planner_prompt_id,
     planner_component,
     run_planner,
 )
@@ -45,6 +45,7 @@ from app.agent.tools.registry import (
     ActionTier,
     TOOL_REGISTRY,
     classify_action,
+    get_planner_selectable_tool_names,
     get_tool_schemas_for_names,
 )
 from app.agent.tool_selector import select_tools
@@ -188,6 +189,20 @@ async def run_agent_loop(
             selected_tool_names = set(TOOL_REGISTRY.keys())
             ranked_scores = []
 
+        # Shadow-mode validation: keep only tool_names the planner could legally
+        # have picked (ignore typos/hallucinations). We log the cleaned list but
+        # still pass all tools to the main LLM in this phase.
+        valid_planner_picks = sorted(
+            set(plan.result.tool_names) & get_planner_selectable_tool_names()
+        )
+        invalid_planner_picks = sorted(
+            set(plan.result.tool_names) - get_planner_selectable_tool_names()
+        )
+        if invalid_planner_picks:
+            logger.warning(
+                f"Planner suggested unknown tools (ignored): {invalid_planner_picks}"
+            )
+
         if plan.raw_response:
             await upsert_prompt_components(db, [planner_component()])
             await log_llm_call(
@@ -195,9 +210,12 @@ async def run_agent_loop(
                 session_id,
                 0,
                 plan.raw_response,
-                prompt_component_ids=[PLANNER_PROMPT_ID],
+                prompt_component_ids=[get_planner_prompt_id()],
             )
-        logger.info(f"Planner: effort={plan.result.effort}, components={plan.result.components}")
+        logger.info(
+            f"Planner: effort={plan.result.effort}, components={plan.result.components}, "
+            f"tool_names={valid_planner_picks}"
+        )
 
         if status_callback:
             if plan.result.plan.goal or plan.result.plan.steps:
@@ -251,6 +269,10 @@ async def run_agent_loop(
         tools_meta = {
             "selected": sorted(selected_tool_names),
             "scores": ranked_scores,
+            # Shadow-mode (Phase 3): planner's tool picks logged but not yet
+            # used to filter — main LLM still sees all tools.
+            "planner_picks": valid_planner_picks,
+            "planner_invalid_picks": invalid_planner_picks,
         }
         final_text = ""
 
